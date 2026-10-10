@@ -12,6 +12,8 @@ pub struct Pos {
     side: int,
     cast: int,
     ep: int,
+    half: int,
+    full: int,
 }
 
 pub func rank_of(sq: int) -> int {
@@ -55,7 +57,7 @@ pub func setup() -> Pos {
         b[f + 56] = 0 - order[f]
         f = f + 1
     }
-    Pos{b: b, side: 1, cast: 15, ep: -1}
+    Pos{b: b, side: 1, cast: 15, ep: -1, half: 0, full: 1}
 }
 
 pub func glyph(p: int) -> str {

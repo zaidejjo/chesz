@@ -3,5 +3,9 @@ name = "chess"
 version = "0.1.0"
 
 [dependencies]
-ask = "^0.6.0"
 rand = "^0.4.0"
+tui = "^0.1.0"
+ask = "^0.6.0"
+
+[dependencies.toast]
+path = "../toast"

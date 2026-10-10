@@ -75,43 +75,113 @@ pub func evaluate(p: board.Pos) -> int {
     }
 }
 
-// Captures and promotions search first: they refute fastest, so
-// alpha-beta prunes the quiet rest away.
+// MVV-LVA loud-move score: most valuable victim, then cheapest
+// attacker, promotions just below winning captures. Quiet moves score
+// zero and keep their generated order behind the loud ones.
+
+func loud_score(p: board.Pos, mv: int) -> int {
+    to := moves.mv_to(mv)
+    vic := p.b[to]
+    if vic < 0 {
+        vic = 0 - vic
+    }
+    from := moves.mv_from(mv)
+    att := p.b[from]
+    if att < 0 {
+        att = 0 - att
+    }
+    // En-passant victim is off-target.
+    if vic == 0 && att == 1 && to == p.ep {
+        vic = 1
+    }
+    score := piece_val(vic) * 10 - piece_val(att) / 100
+    if moves.mv_promo(mv) != 0 {
+        score = score + 5000
+    }
+    score
+}
+
+func is_loud(p: board.Pos, mv: int) -> bool {
+    if moves.mv_promo(mv) != 0 {
+        true
+    } else {
+        to := moves.mv_to(mv)
+        if p.b[to] != 0 {
+            true
+        } else {
+            from := moves.mv_from(mv)
+            att := p.b[from]
+            if att < 0 {
+                att = 0 - att
+            }
+            att == 1 && to == p.ep
+        }
+    }
+}
+
+// Captures and promotions search first, best victims first: they
+// refute fastest, so alpha-beta prunes the quiet rest away.
 
 func ordered(p: board.Pos, ms: [int], first_caps: int) -> [int] {
     out := []
+    loud := []
     i := 0
     while i < len(ms) {
-        loud := false
-        if p.b[moves.mv_to(ms[i])] != 0 || moves.mv_promo(ms[i]) != 0 {
-            loud = true
+        if is_loud(p, ms[i]) == (first_caps == 1) {
+            if first_caps == 1 {
+                // Insertion by victim value (tiny lists, no alloc sort).
+                s := loud_score(p, ms[i])
+                j := 0
+                while j < len(loud) {
+                    if loud_score(p, loud[j]) < s {
+                        break
+                    }
+                    j = j + 1
+                }
+                loud = vec_insert(loud, j, ms[i])
+            } else {
+                out = vec.push(out, ms[i])
+            }
         }
-        if loud == (first_caps == 1) {
-            out = vec.push(out, ms[i])
-        }
+        i = i + 1
+    }
+    concat_moves(loud, out)
+}
+
+func vec_insert(v: [int], at: int, x: int) -> [int] {
+    out := []
+    i := 0
+    while i < at {
+        out = vec.push(out, v[i])
+        i = i + 1
+    }
+    out = vec.push(out, x)
+    while i < len(v) {
+        out = vec.push(out, v[i])
         i = i + 1
     }
     out
 }
 
-func search(p: board.Pos, depth: int, alpha: int, beta: int) -> int {
-    // Horizon: static eval with no move generation (leaves are ~97% of
-    // nodes; gen_legal there costs ~35 copy-makes each for nothing).
-    // Exception: when in check we must verify mate vs evasions, or
-    // mates go blind at the horizon. Checks are rare, so this is cheap.
-    if depth == 0 {
-        if !moves.in_check(p) {
+// Quiescence: captures/promotions play out past the horizon so the
+// static eval never scores mid-exchange. Standing pat is always an
+// option (fail-soft). Checks force full evasions, capped so a checking
+// cascade cannot run away. qd counts remaining loud plies.
+
+func qsearch(p: board.Pos, alpha: int, beta: int, qd: int) -> int {
+    if moves.in_check(p) {
+        if qd <= 0 {
             return evaluate(p)
         }
         ms := moves.gen_legal(p)
         if len(ms) == 0 {
-            return 0 - 100000
+            return 0 - 100000 - qd
         }
         a := alpha
         i := 0
         while i < len(ms) {
             q := moves.make(p, ms[i])
-            score := 0 - search(q, 0, 0 - beta, 0 - a)
+            score := 0 - qsearch(q, 0 - beta, 0 - a, qd - 1)
             if score >= beta {
                 return score
             }
@@ -121,6 +191,52 @@ func search(p: board.Pos, depth: int, alpha: int, beta: int) -> int {
             i = i + 1
         }
         return a
+    }
+    stand := evaluate(p)
+    if stand >= beta {
+        return stand
+    }
+    a := alpha
+    if stand > a {
+        a = stand
+    }
+    if qd <= 0 {
+        return a
+    }
+    all := moves.gen_pseudo(p)
+    loud := []
+    i := 0
+    while i < len(all) {
+        if is_loud(p, all[i]) {
+            loud = vec.push(loud, all[i])
+        }
+        i = i + 1
+    }
+    loud = ordered(p, loud, 1)
+    i = 0
+    while i < len(loud) {
+        // Pseudo-loud may leave the king hanging; skip illegal ones.
+        q := moves.make(p, loud[i])
+        k := moves.king_sq(q.b, p.side)
+        if k >= 0 && !moves.is_attacked(q.b, k, q.side) {
+            score := 0 - qsearch(q, 0 - beta, 0 - a, qd - 1)
+            if score >= beta {
+                return score
+            }
+            if score > a {
+                a = score
+            }
+        }
+        i = i + 1
+    }
+    a
+}
+
+func search(p: board.Pos, depth: int, alpha: int, beta: int) -> int {
+    // Horizon hands off to quiescence (captures resolve, checks evade)
+    // instead of a blind static eval.
+    if depth == 0 {
+        return qsearch(p, alpha, beta, 6)
     }
     all := moves.gen_legal(p)
     if len(all) == 0 {
@@ -173,7 +289,7 @@ pub func best_move(p: board.Pos, depth: int, hist: [int]) -> int {
     i := 0
     while i < len(ms) {
         q := moves.make(p, ms[i])
-        if !seen_before(hist, q.b) {
+        if !seen_before(hist, q.side, q.b) {
             score := 0 - search(q, depth - 1, 0 - 1000000, 1000000)
             if best == 0 || score > best_score {
                 best_score = score
@@ -201,36 +317,38 @@ pub func best_move(p: board.Pos, depth: int, hist: [int]) -> int {
     best
 }
 
-// True when b matches a same-side-to-move board in hist. The mover's
-// resulting board has the flipped side, so only odd-ago entries (1, 3,
-// 5 plies back) share its side to move.
+// True when b matches a same-side-to-move board in hist. Entries hold
+// 65 ints (side + 64 squares), most recent last; only odd-ago entries
+// (1, 3, 5 plies back) share the mover's resulting side to move.
 
-func seen_before(hist: [int], b: [int]) -> bool {
-    n := len(hist) / 64
+func seen_before(hist: [int], side: int, b: [int]) -> bool {
+    n := len(hist) / 65
     k := 1
     while k <= n && k <= 11 {
-        base := (n - k) * 64
-        same := true
-        i := 0
-        while i < 64 {
-            if hist[base + i] != b[i] {
-                same = false
+        base := (n - k) * 65
+        if hist[base] == side {
+            same := true
+            i := 0
+            while i < 64 {
+                if hist[base + 1 + i] != b[i] {
+                    same = false
+                }
+                i = i + 1
             }
-            i = i + 1
-        }
-        if same {
-            return true
+            if same {
+                return true
+            }
         }
         k = k + 2
     }
     false
 }
 
-// Record b, keeping at most the last 12 positions.
+// Record side + board, keeping at most the last 12 positions.
 
-pub func push_hist(hist: [int], b: [int]) -> [int] {
+pub func push_hist(hist: [int], p: board.Pos) -> [int] {
     out := []
-    start := len(hist) + 64 - 12 * 64
+    start := len(hist) + 65 - 12 * 65
     if start < 0 {
         start = 0
     }
@@ -239,12 +357,65 @@ pub func push_hist(hist: [int], b: [int]) -> [int] {
         out = vec.push(out, hist[i])
         i = i + 1
     }
+    out = vec.push(out, p.side)
     i = 0
     while i < 64 {
-        out = vec.push(out, b[i])
+        out = vec.push(out, p.b[i])
         i = i + 1
     }
     out
+}
+
+// Counts appearances of the side-to-move board in hist (plus the
+// current one). Three or more means threefold repetition.
+
+pub func repetitions(hist: [int], p: board.Pos) -> int {
+    count := 1
+    n := len(hist) / 65
+    k := 0
+    while k < n {
+        base := k * 65
+        if hist[base] == p.side {
+            same := true
+            i := 0
+            while i < 64 {
+                if hist[base + 1 + i] != p.b[i] {
+                    same = false
+                }
+                i = i + 1
+            }
+            if same {
+                count = count + 1
+            }
+        }
+        k = k + 1
+    }
+    count
+}
+
+// Dead positions no legal sequence can mate from: bare kings, or one
+// side with a single minor and nothing else.
+
+pub func insufficient_material(b: [int]) -> bool {
+    i := 0
+    minors := 0
+    while i < 64 {
+        v := b[i]
+        if v != 0 {
+            a := v
+            if a < 0 {
+                a = 0 - a
+            }
+            if a == 1 || a == 4 || a == 5 {
+                return false
+            }
+            if a == 2 || a == 3 {
+                minors = minors + 1
+            }
+        }
+        i = i + 1
+    }
+    minors <= 1
 }
 
 // Score of the best move (for display, in centipawns).

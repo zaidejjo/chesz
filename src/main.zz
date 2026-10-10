@@ -9,7 +9,9 @@
 import ai
 import ask
 import board
+import fen
 import moves
+import san
 
 func perft(p: board.Pos, d: int) -> int {
     if d == 0 {
@@ -69,9 +71,19 @@ func perft_check() {
     }
 }
 
-// 0 ongoing, 1 white mates, 2 black mates, 3 stalemate.
+// 0 ongoing, 1 white mates, 2 black mates, 3 stalemate,
+// 4 fifty-move rule, 5 threefold repetition, 6 dead material.
 
-func game_status(p: board.Pos) -> int {
+func game_status(p: board.Pos, hist: [int]) -> int {
+    if p.half >= 100 {
+        return 4
+    }
+    if ai.repetitions(hist, p) >= 3 {
+        return 5
+    }
+    if ai.insufficient_material(p.b) {
+        return 6
+    }
     ms := moves.gen_legal(p)
     if len(ms) > 0 {
         return 0
@@ -85,36 +97,51 @@ func game_status(p: board.Pos) -> int {
     3
 }
 
+func status_line(st: int) -> str {
+    if st == 1 {
+        "1-0 white mates"
+    } else {
+        if st == 2 {
+            "0-1 black mates"
+        } else {
+            if st == 3 {
+                "1/2-1/2 stalemate"
+            } else {
+                if st == 4 {
+                    "1/2-1/2 fifty-move rule"
+                } else {
+                    if st == 5 {
+                        "1/2-1/2 threefold repetition"
+                    } else {
+                        "1/2-1/2 dead position"
+                    }
+                }
+            }
+        }
+    }
+}
+
 func play_game(depth: int, max_ply: int) {
     p := board.setup()
     ply := 0
     done := false
     hist := []
     while ply < max_ply && !done {
-        st := game_status(p)
-        if st == 1 {
-            println("1-0 white mates")
+        st := game_status(p, hist)
+        if st != 0 {
+            println(status_line(st))
             done = true
         } else {
-            if st == 2 {
-                println("0-1 black mates")
-                done = true
+            m := ai.best_move(p, depth, hist)
+            name := san.notation(p, m)
+            if p.side == 1 {
+                print(str(ply / 2 + 1) + ". " + name + " ")
             } else {
-                if st == 3 {
-                    println("1/2-1/2 stalemate")
-                    done = true
-                } else {
-                    m := ai.best_move(p, depth, hist)
-                    if p.side == 1 {
-                        print(str(ply / 2 + 1) + ". " + board.move_name(m) + " ")
-                    } else {
-                        println(board.move_name(m))
-                    }
-                    hist = ai.push_hist(hist, p.b)
-                    p = moves.make(p, m)
-                    ply = ply + 1
-                }
+                println(name)
             }
+            hist = ai.push_hist(hist, p)
+            p = moves.make(p, m)
+            ply = ply + 1
         }
     }
     if !done {
@@ -195,9 +222,16 @@ func rank_num(c: str) -> int {
     }
 }
 
-// Match "e2e4" / "e7e8q" against the legal list; 0 when illegal.
+// Match "e2e4" / "e7e8q" / "O-O" / "O-O-O" against the legal list;
+// 0 when illegal.
 
 func parse_move(s: str, legal: [int]) -> int {
+    if s == "O-O" || s == "0-0" {
+        return find_castle(legal, 6, 62)
+    }
+    if s == "O-O-O" || s == "0-0-0" {
+        return find_castle(legal, 2, 58)
+    }
     if len(s) < 4 {
         return 0
     }
@@ -244,55 +278,64 @@ func parse_move(s: str, legal: [int]) -> int {
     0
 }
 
+func find_castle(legal: [int], wto: int, bto: int) -> int {
+    i := 0
+    while i < len(legal) {
+        m := legal[i]
+        from := moves.mv_from(m)
+        to := moves.mv_to(m)
+        if (from == 4 && (to == wto)) || (from == 60 && (to == bto)) {
+            // Kingside and queenside share no target, but make sure the
+            // move really is the two-square king hop, not a capture.
+            if to - from == 2 || from - to == 2 {
+                return m
+            }
+        }
+        i = i + 1
+    }
+    0
+}
+
 func play_human(depth: int, human_side: int) {
     p := board.setup()
     board.show(p.b)
     done := false
     hist := []
     while !done {
-        st := game_status(p)
-        if st == 1 {
-            println("1-0 white mates")
+        st := game_status(p, hist)
+        if st != 0 {
+            println(status_line(st))
             done = true
         } else {
-            if st == 2 {
-                println("0-1 black mates")
-                done = true
-            } else {
-                if st == 3 {
-                    println("1/2-1/2 stalemate.")
-                    done = true
-                } else {
-                    if p.side == human_side {
-                        legal := moves.gen_legal(p)
-                        s := ask.text("your move (e2e4, resign)", "", |s: str| len(s) >= 4)
-                        if s == "resign" {
-                            if ask.confirm("Resign this game?", false) {
-                                if human_side == 1 {
-                                    println("0-1 resigned")
-                                } else {
-                                    println("1-0 resigned")
-                                }
-                                done = true
-                            }
+            if p.side == human_side {
+                legal := moves.gen_legal(p)
+                s := ask.text("your move (e2e4, O-O, resign)", "", |s: str| len(s) >= 3)
+                if s == "resign" {
+                    if ask.confirm("Resign this game?", false) {
+                        if human_side == 1 {
+                            println("0-1 resigned")
                         } else {
-                            m := parse_move(s, legal)
-                            if m == 0 {
-                                println("illegal move, try again")
-                            } else {
-                                hist = ai.push_hist(hist, p.b)
-                                p = moves.make(p, m)
-                                board.show(p.b)
-                            }
+                            println("1-0 resigned")
                         }
+                        done = true
+                    }
+                } else {
+                    m := parse_move(s, legal)
+                    if m == 0 {
+                        println("illegal move, try again")
                     } else {
-                        m := ai.best_move(p, depth, hist)
-                        println("engine: " + board.move_name(m))
-                        hist = ai.push_hist(hist, p.b)
+                        println("you: " + san.notation(p, m))
+                        hist = ai.push_hist(hist, p)
                         p = moves.make(p, m)
                         board.show(p.b)
                     }
                 }
+            } else {
+                m := ai.best_move(p, depth, hist)
+                println("engine: " + san.notation(p, m))
+                hist = ai.push_hist(hist, p)
+                p = moves.make(p, m)
+                board.show(p.b)
             }
         }
     }
@@ -336,6 +379,27 @@ func menu() {
     println("bye!")
 }
 
+func show_fen(fen_text: str) {
+    match fen.parse(fen_text) {
+        .some(p) => {
+            board.show(p.b)
+            println("fen: " + fen.generate(p))
+            ms := moves.gen_legal(p)
+            println("legal moves: " + str(len(ms)))
+            if moves.in_check(p) {
+                println("side to move is in check")
+            }
+            if p.half >= 100 {
+                println("fifty-move draw")
+            }
+            if ai.insufficient_material(p.b) {
+                println("dead position")
+            }
+        }
+        .none => println("bad FEN")
+    }
+}
+
 func main(args: [str]) {
     if len(args) == 0 {
         menu()
@@ -349,7 +413,11 @@ func main(args: [str]) {
                 if args[0] == "play" {
                     play_human(2, 1)
                 } else {
-                    println("usage: perft | ai | play")
+                    if args[0] == "fen" && len(args) > 1 {
+                        show_fen(args[1])
+                    } else {
+                        println("usage: perft | ai | play | fen \"<FEN>\"")
+                    }
                 }
             }
         }

@@ -1,0 +1,177 @@
+// Chess engine tests: FEN roundtrips, clocks, movegen sanity.
+// Fast — no search beyond depth-2 perft.
+
+import chess.ai
+import chess.fen
+import chess.moves
+import chess.san
+
+@test
+func fen_startpos_roundtrip() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            assert_eq(p.side, 1)
+            assert_eq(p.cast, 15)
+            assert_eq(p.ep, 0 - 1)
+            assert_eq(p.half, 0)
+            assert_eq(p.full, 1)
+            assert_eq(fen.generate(p), fen.startpos())
+        }
+        .none => panic("startpos FEN rejected")
+    }
+}
+
+@test
+func fen_kiwipete_fields() {
+    match fen.parse(fen.kiwipete()) {
+        .some(p) => {
+            assert_eq(p.side, 1)
+            assert_eq(p.cast, 15)
+            assert_eq(len(moves.gen_legal(p)), 48)
+        }
+        .none => panic("kiwipete FEN rejected")
+    }
+}
+
+@test
+func fen_rejects_garbage() {
+    match fen.parse("not a fen") {
+        .some(_) => panic("garbage FEN accepted")
+        .none => assert_eq(1, 1)
+    }
+    match fen.parse("8/8/8/8/8/8/8/8 w - - 0 1") {
+        .some(p) => assert_eq(fen.generate(p), "8/8/8/8/8/8/8/8 w - - 0 1")
+        .none => panic("empty board rejected")
+    }
+}
+
+@test
+func clocks_tick() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            // e2e4: pawn double push, clock reset, ep set, side flips.
+            ms := moves.gen_legal(p)
+            found := false
+            i := 0
+            while i < len(ms) {
+                if moves.mv_from(ms[i]) == 12 && moves.mv_to(ms[i]) == 28 {
+                    q := moves.make(p, ms[i])
+                    assert_eq(q.half, 0)
+                    assert_eq(q.side, 0 - 1)
+                    assert_eq(q.ep, 20)
+                    assert_eq(q.full, 1)
+                    found = true
+                }
+                i = i + 1
+            }
+            assert_eq(found, true)
+            // Ng1f3: quiet knight move, clock ticks, number holds (white).
+            i = 0
+            found = false
+            while i < len(ms) {
+                if moves.mv_from(ms[i]) == 6 && moves.mv_to(ms[i]) == 21 {
+                    q := moves.make(p, ms[i])
+                    assert_eq(q.half, 1)
+                    assert_eq(q.ep, 0 - 1)
+                    assert_eq(q.full, 1)
+                    found = true
+                }
+                i = i + 1
+            }
+            assert_eq(found, true)
+        }
+        .none => panic("startpos rejected")
+    }
+}
+
+@test
+func perft_startpos_shallow() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            assert_eq(len(moves.gen_legal(p)), 20)
+            n := 0
+            ms := moves.gen_legal(p)
+            i := 0
+            while i < len(ms) {
+                n = n + len(moves.gen_legal(moves.make(p, ms[i])))
+                i = i + 1
+            }
+            assert_eq(n, 400)
+        }
+        .none => panic("startpos rejected")
+    }
+}
+
+@test
+func san_spot_checks() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            // e2e4 -> "e4", Ng1f3 -> "Nf3".
+            ms := moves.gen_legal(p)
+            i := 0
+            seen_e4 := false
+            seen_nf3 := false
+            while i < len(ms) {
+                m := ms[i]
+                if moves.mv_from(m) == 12 && moves.mv_to(m) == 28 {
+                    assert_eq(san.notation(p, m), "e4")
+                    seen_e4 = true
+                }
+                if moves.mv_from(m) == 6 && moves.mv_to(m) == 21 {
+                    assert_eq(san.notation(p, m), "Nf3")
+                    seen_nf3 = true
+                }
+                i = i + 1
+            }
+            assert_eq(seen_e4, true)
+            assert_eq(seen_nf3, true)
+        }
+        .none => panic("startpos rejected")
+    }
+    // Scholar's mate finish is mate: Qxf7#.
+    match fen.parse("r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 0 1") {
+        .some(p) => {
+            ms := moves.gen_legal(p)
+            i := 0
+            found := false
+            while i < len(ms) {
+                m := ms[i]
+                if moves.mv_from(m) == 39 && moves.mv_to(m) == 53 {
+                    assert_eq(san.notation(p, m), "Qxf7#")
+                    found = true
+                }
+                i = i + 1
+            }
+            assert_eq(found, true)
+        }
+        .none => panic("mate FEN rejected")
+    }
+}
+
+@test
+func draw_rules() {
+    // Bare kings: dead.
+    match fen.parse("8/8/4k3/8/8/4K3/8/8 w - - 0 1") {
+        .some(p) => assert_eq(ai.insufficient_material(p.b), true)
+        .none => panic("kings FEN rejected")
+    }
+    // Startpos: not dead.
+    match fen.parse(fen.startpos()) {
+        .some(p) => assert_eq(ai.insufficient_material(p.b), false)
+        .none => panic("startpos rejected")
+    }
+    // Fifty-move clock triggers at 100.
+    match fen.parse("8/8/4k3/8/8/4K3/8/8 w - - 100 60") {
+        .some(p) => assert_eq(p.half >= 100, true)
+        .none => panic("fifty FEN rejected")
+    }
+    // Repetition counting: fresh history sees the current board once.
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            assert_eq(ai.repetitions([], p), 1)
+            h := ai.push_hist([], p)
+            assert_eq(ai.repetitions(h, p), 2)
+        }
+        .none => panic("startpos rejected")
+    }
+}

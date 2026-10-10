@@ -355,6 +355,11 @@ pub func make(p: board.Pos, mv: int) -> board.Pos {
     piece := q.b[from]
     side := q.side
     pc := piece * side
+    // Capture test before the board mutates (en-passant included).
+    captured := q.b[to] != 0
+    if pc == 1 && to == p.ep {
+        captured = true
+    }
     // En-passant capture removes the pawn behind the target.
     if pc == 1 && to == p.ep {
         q.b[to - 8 * side] = 0
@@ -412,6 +417,18 @@ pub func make(p: board.Pos, mv: int) -> board.Pos {
         q.ep = (from + to) / 2
     } else {
         q.ep = -1
+    }
+    // Clocks: pawn moves and captures reset the fifty-move count;
+    // the move number ticks after black replies.
+    if pc == 1 || captured {
+        q.half = 0
+    } else {
+        q.half = p.half + 1
+    }
+    if side == 0 - 1 {
+        q.full = p.full + 1
+    } else {
+        q.full = p.full
     }
     q.side = board.opp(side)
     q
