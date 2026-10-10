@@ -1,0 +1,357 @@
+// Chess in ZZ: full legal move generation (castling, en passant,
+// promotion), check/checkmate/stalemate detection, and a negamax AI.
+//
+//   d_zz run examples/chess/main.zz          self-test + help
+//   d_zz run examples/chess/main.zz perft    perft(1..3) vs known counts
+//   d_zz run examples/chess/main.zz ai       AI vs AI, depth 2
+//   d_zz run examples/chess/main.zz play     human (white) vs AI, moves like e2e4
+
+import ai
+import ask
+import board
+import moves
+
+func perft(p: board.Pos, d: int) -> int {
+    if d == 0 {
+        return 1
+    }
+    ms := moves.gen_legal(p)
+    if d == 1 {
+        return len(ms)
+    }
+    n := 0
+    i := 0
+    while i < len(ms) {
+        n = n + perft(moves.make(p, ms[i]), d - 1)
+        i = i + 1
+    }
+    n
+}
+
+func selftest() {
+    p := board.setup()
+    n1 := perft(p, 1)
+    n2 := perft(p, 2)
+    println("perft(1) = " + str(n1) + " (want 20)")
+    println("perft(2) = " + str(n2) + " (want 400)")
+    if n1 == 20 && n2 == 400 {
+        println("movegen OK")
+    } else {
+        println("MOVEGEN BROKEN")
+    }
+    ms := moves.gen_legal(p)
+    println("startpos legal moves: " + str(len(ms)) + " (want 20)")
+    m := ai.best_move(p, 1, [])
+    println("depth-1 pick: " + board.move_name(m))
+}
+
+func perft_check() {
+    p := board.setup()
+    d := 1
+    while d <= 3 {
+        n := perft(p, d)
+        want := 0
+        if d == 1 {
+            want = 20
+        } else {
+            if d == 2 {
+                want = 400
+            } else {
+                want = 8902
+            }
+        }
+        mark := "OK"
+        if n != want {
+            mark = "FAIL"
+        }
+        println("perft(" + str(d) + ") = " + str(n) + " (want " + str(want) + ") " + mark)
+        d = d + 1
+    }
+}
+
+// 0 ongoing, 1 white mates, 2 black mates, 3 stalemate.
+
+func game_status(p: board.Pos) -> int {
+    ms := moves.gen_legal(p)
+    if len(ms) > 0 {
+        return 0
+    }
+    if moves.in_check(p) {
+        if p.side == 1 {
+            return 2
+        }
+        return 1
+    }
+    3
+}
+
+func play_game(depth: int, max_ply: int) {
+    p := board.setup()
+    ply := 0
+    done := false
+    hist := []
+    while ply < max_ply && !done {
+        st := game_status(p)
+        if st == 1 {
+            println("1-0 white mates")
+            done = true
+        } else {
+            if st == 2 {
+                println("0-1 black mates")
+                done = true
+            } else {
+                if st == 3 {
+                    println("1/2-1/2 stalemate")
+                    done = true
+                } else {
+                    m := ai.best_move(p, depth, hist)
+                    if p.side == 1 {
+                        print(str(ply / 2 + 1) + ". " + board.move_name(m) + " ")
+                    } else {
+                        println(board.move_name(m))
+                    }
+                    hist = ai.push_hist(hist, p.b)
+                    p = moves.make(p, m)
+                    ply = ply + 1
+                }
+            }
+        }
+    }
+    if !done {
+        println("1/2-1/2 move cap")
+    }
+    board.show(p.b)
+}
+
+func file_num(c: str) -> int {
+    if c == "a" {
+        0
+    } else {
+        if c == "b" {
+            1
+        } else {
+            if c == "c" {
+                2
+            } else {
+                if c == "d" {
+                    3
+                } else {
+                    if c == "e" {
+                        4
+                    } else {
+                        if c == "f" {
+                            5
+                        } else {
+                            if c == "g" {
+                                6
+                            } else {
+                                if c == "h" {
+                                    7
+                                } else {
+                                    0 - 1
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+func rank_num(c: str) -> int {
+    if c == "1" {
+        0
+    } else {
+        if c == "2" {
+            1
+        } else {
+            if c == "3" {
+                2
+            } else {
+                if c == "4" {
+                    3
+                } else {
+                    if c == "5" {
+                        4
+                    } else {
+                        if c == "6" {
+                            5
+                        } else {
+                            if c == "7" {
+                                6
+                            } else {
+                                if c == "8" {
+                                    7
+                                } else {
+                                    0 - 1
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Match "e2e4" / "e7e8q" against the legal list; 0 when illegal.
+
+func parse_move(s: str, legal: [int]) -> int {
+    if len(s) < 4 {
+        return 0
+    }
+    f0 := file_num(s[0])
+    r0 := rank_num(s[1])
+    f1 := file_num(s[2])
+    r1 := rank_num(s[3])
+    if f0 < 0 || r0 < 0 || f1 < 0 || r1 < 0 {
+        return 0
+    }
+    from := f0 + r0 * 8
+    to := f1 + r1 * 8
+    promo := 0 - 1
+    if len(s) >= 5 {
+        pc := s[4]
+        if pc == "q" {
+            promo = 5
+        } else {
+            if pc == "r" {
+                promo = 4
+            } else {
+                if pc == "b" {
+                    promo = 3
+                } else {
+                    if pc == "n" {
+                        promo = 2
+                    } else {
+                        return 0
+                    }
+                }
+            }
+        }
+    }
+    i := 0
+    while i < len(legal) {
+        m := legal[i]
+        if moves.mv_from(m) == from && moves.mv_to(m) == to {
+            if promo < 0 || moves.mv_promo(m) == promo {
+                return m
+            }
+        }
+        i = i + 1
+    }
+    0
+}
+
+func play_human(depth: int, human_side: int) {
+    p := board.setup()
+    board.show(p.b)
+    done := false
+    hist := []
+    while !done {
+        st := game_status(p)
+        if st == 1 {
+            println("1-0 white mates")
+            done = true
+        } else {
+            if st == 2 {
+                println("0-1 black mates")
+                done = true
+            } else {
+                if st == 3 {
+                    println("1/2-1/2 stalemate.")
+                    done = true
+                } else {
+                    if p.side == human_side {
+                        legal := moves.gen_legal(p)
+                        s := ask.text("your move (e2e4, resign)", "", |s: str| len(s) >= 4)
+                        if s == "resign" {
+                            if ask.confirm("Resign this game?", false) {
+                                if human_side == 1 {
+                                    println("0-1 resigned")
+                                } else {
+                                    println("1-0 resigned")
+                                }
+                                done = true
+                            }
+                        } else {
+                            m := parse_move(s, legal)
+                            if m == 0 {
+                                println("illegal move, try again")
+                            } else {
+                                hist = ai.push_hist(hist, p.b)
+                                p = moves.make(p, m)
+                                board.show(p.b)
+                            }
+                        }
+                    } else {
+                        m := ai.best_move(p, depth, hist)
+                        println("engine: " + board.move_name(m))
+                        hist = ai.push_hist(hist, p.b)
+                        p = moves.make(p, m)
+                        board.show(p.b)
+                    }
+                }
+            }
+        }
+    }
+}
+
+func pick_depth() -> int {
+    c := ask.select("Engine strength", ["Quick (depth 1)", "Strong (depth 2)"])
+    if c == "Strong (depth 2)" {
+        2
+    } else {
+        1
+    }
+}
+
+func menu() {
+    again := true
+    while again {
+        c := ask.select("ZZ Chess", ["Play vs engine", "Watch engine vs engine", "Self-test", "Quit"])
+        if c == "Play vs engine" {
+            side := ask.select("Play as", ["White", "Black"])
+            human := 1
+            if side == "Black" {
+                human = 0 - 1
+            }
+            play_human(pick_depth(), human)
+            again = ask.confirm("Back to menu?", true)
+        } else {
+            if c == "Watch engine vs engine" {
+                play_game(pick_depth(), 40)
+                again = ask.confirm("Back to menu?", true)
+            } else {
+                if c == "Self-test" {
+                    selftest()
+                    again = ask.confirm("Back to menu?", true)
+                } else {
+                    again = false
+                }
+            }
+        }
+    }
+    println("bye!")
+}
+
+func main(args: [str]) {
+    if len(args) == 0 {
+        menu()
+    } else {
+        if args[0] == "perft" {
+            perft_check()
+        } else {
+            if args[0] == "ai" {
+                play_game(2, 40)
+            } else {
+                if args[0] == "play" {
+                    play_human(2, 1)
+                } else {
+                    println("usage: perft | ai | play")
+                }
+            }
+        }
+    }
+}

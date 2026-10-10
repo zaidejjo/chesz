@@ -1,0 +1,189 @@
+// Chess board model.
+// Squares 0..63, a1 = 0, h8 = 63. rank = sq / 8, file = sq % 8.
+// Pieces: P=1 N=2 B=3 R=4 Q=5 K=6. White positive, black negative,
+// 0 empty. Side to move: 1 white, 0 - 1 black.
+// Castling rights bits: 1 = WK, 2 = WQ, 4 = BK, 8 = BQ.
+// ep: en-passant target square, or -1.
+
+import std.vec
+
+pub struct Pos {
+    b: [int],
+    side: int,
+    cast: int,
+    ep: int,
+}
+
+pub func rank_of(sq: int) -> int {
+    sq / 8
+}
+
+pub func file_of(sq: int) -> int {
+    sq % 8
+}
+
+pub func abs(x: int) -> int {
+    if x < 0 {
+        0 - x
+    } else {
+        x
+    }
+}
+
+pub func opp(side: int) -> int {
+    0 - side
+}
+
+pub func new_board() -> [int] {
+    b := [0]
+    i := 1
+    while i < 64 {
+        b = vec.push(b, 0)
+        i = i + 1
+    }
+    b
+}
+
+pub func setup() -> Pos {
+    b := new_board()
+    order := [4, 2, 3, 5, 6, 3, 2, 4]
+    f := 0
+    while f < 8 {
+        b[f] = order[f]
+        b[f + 8] = 1
+        b[f + 48] = 0 - 1
+        b[f + 56] = 0 - order[f]
+        f = f + 1
+    }
+    Pos{b: b, side: 1, cast: 15, ep: -1}
+}
+
+pub func glyph(p: int) -> str {
+    if p == 0 {
+        "."
+    } else {
+        if p == 1 {
+            "P"
+        } else {
+            if p == 2 {
+                "N"
+            } else {
+                if p == 3 {
+                    "B"
+                } else {
+                    if p == 4 {
+                        "R"
+                    } else {
+                        if p == 5 {
+                            "Q"
+                        } else {
+                            if p == 6 {
+                                "K"
+                            } else {
+                                if p == 0 - 1 {
+                                    "p"
+                                } else {
+                                    if p == 0 - 2 {
+                                        "n"
+                                    } else {
+                                        if p == 0 - 3 {
+                                            "b"
+                                        } else {
+                                            if p == 0 - 4 {
+                                                "r"
+                                            } else {
+                                                if p == 0 - 5 {
+                                                    "q"
+                                                } else {
+                                                    if p == 0 - 6 {
+                                                        "k"
+                                                    } else {
+                                                        "?"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub func show(b: [int]) {
+    r := 7
+    while r >= 0 {
+        line := str(r + 1) + " "
+        f := 0
+        while f < 8 {
+            line = line + glyph(b[r * 8 + f]) + " "
+            f = f + 1
+        }
+        println(line)
+        r = r - 1
+    }
+    println("  a b c d e f g h")
+}
+
+pub func file_char(f: int) -> str {
+    if f == 0 {
+        "a"
+    } else {
+        if f == 1 {
+            "b"
+        } else {
+            if f == 2 {
+                "c"
+            } else {
+                if f == 3 {
+                    "d"
+                } else {
+                    if f == 4 {
+                        "e"
+                    } else {
+                        if f == 5 {
+                            "f"
+                        } else {
+                            if f == 6 {
+                                "g"
+                            } else {
+                                "h"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub func sq_name(sq: int) -> str {
+    file_char(file_of(sq)) + str(rank_of(sq) + 1)
+}
+
+pub func move_name(mv: int) -> str {
+    from := mv % 64
+    to := (mv / 64) % 64
+    promo := mv / 4096
+    s := sq_name(from) + sq_name(to)
+    if promo == 5 {
+        s = s + "q"
+    } else {
+        if promo == 4 {
+            s = s + "r"
+        } else {
+            if promo == 3 {
+                s = s + "b"
+            } else {
+                if promo == 2 {
+                    s = s + "n"
+                }
+            }
+        }
+    }
+    s
+}

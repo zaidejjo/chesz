@@ -1,0 +1,269 @@
+// Evaluation (material, side-to-move perspective) and negamax search
+// with alpha-beta pruning. Mate scores: 100000 adjusted by depth so
+// faster mates rank higher.
+
+import std.vec
+
+import board
+import moves
+import rand
+
+pub func piece_val(pc: int) -> int {
+    if pc == 1 {
+        100
+    } else {
+        if pc == 2 {
+            320
+        } else {
+            if pc == 3 {
+                330
+            } else {
+                if pc == 4 {
+                    500
+                } else {
+                    if pc == 5 {
+                        900
+                    } else {
+                        0
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Small centralization bonus so equal-material moves don't all tie.
+
+func pst(pc: int, f: int, r: int) -> int {
+    if f >= 2 && f <= 5 && r >= 2 && r <= 5 {
+        if pc == 1 {
+            6
+        } else {
+            if pc == 2 {
+                12
+            } else {
+                if pc == 3 {
+                    4
+                } else {
+                    0
+                }
+            }
+        }
+    } else {
+        0
+    }
+}
+
+pub func evaluate(p: board.Pos) -> int {
+    s := 0
+    i := 0
+    while i < 64 {
+        v := p.b[i]
+        if v > 0 {
+            s = s + piece_val(v) + pst(v, board.file_of(i), board.rank_of(i))
+        } else {
+            if v < 0 {
+                s = s - piece_val(0 - v) - pst(0 - v, board.file_of(i), board.rank_of(i))
+            }
+        }
+        i = i + 1
+    }
+    if p.side == 1 {
+        s
+    } else {
+        0 - s
+    }
+}
+
+// Captures and promotions search first: they refute fastest, so
+// alpha-beta prunes the quiet rest away.
+
+func ordered(p: board.Pos, ms: [int], first_caps: int) -> [int] {
+    out := []
+    i := 0
+    while i < len(ms) {
+        loud := false
+        if p.b[moves.mv_to(ms[i])] != 0 || moves.mv_promo(ms[i]) != 0 {
+            loud = true
+        }
+        if loud == (first_caps == 1) {
+            out = vec.push(out, ms[i])
+        }
+        i = i + 1
+    }
+    out
+}
+
+func search(p: board.Pos, depth: int, alpha: int, beta: int) -> int {
+    // Horizon: static eval with no move generation (leaves are ~97% of
+    // nodes; gen_legal there costs ~35 copy-makes each for nothing).
+    // Exception: when in check we must verify mate vs evasions, or
+    // mates go blind at the horizon. Checks are rare, so this is cheap.
+    if depth == 0 {
+        if !moves.in_check(p) {
+            return evaluate(p)
+        }
+        ms := moves.gen_legal(p)
+        if len(ms) == 0 {
+            return 0 - 100000
+        }
+        a := alpha
+        i := 0
+        while i < len(ms) {
+            q := moves.make(p, ms[i])
+            score := 0 - search(q, 0, 0 - beta, 0 - a)
+            if score >= beta {
+                return score
+            }
+            if score > a {
+                a = score
+            }
+            i = i + 1
+        }
+        return a
+    }
+    all := moves.gen_legal(p)
+    if len(all) == 0 {
+        if moves.in_check(p) {
+            return 0 - 100000 - depth
+        }
+        return 0
+    }
+    ms := concat_moves(ordered(p, all, 1), ordered(p, all, 0))
+    a := alpha
+    i := 0
+    while i < len(ms) {
+        q := moves.make(p, ms[i])
+        // Negate bounds through the recursion (negamax).
+        score := 0 - search(q, depth - 1, 0 - beta, 0 - a)
+        if score >= beta {
+            return score
+        }
+        if score > a {
+            a = score
+        }
+        i = i + 1
+    }
+    a
+}
+
+func concat_moves(a: [int], b: [int]) -> [int] {
+    i := 0
+    while i < len(b) {
+        a = vec.push(a, b[i])
+        i = i + 1
+    }
+    a
+}
+
+// Best move for the side to move at `depth` (0 when no legal move).
+// `hist` holds past boards back-to-back (64 ints each, most recent
+// last); moves repeating any same-side position in it are skipped to
+// break shuffle loops, unless nothing else exists.
+
+pub func best_move(p: board.Pos, depth: int, hist: [int]) -> int {
+    all := moves.gen_legal(p)
+    if len(all) == 0 {
+        return 0
+    }
+    ms := concat_moves(ordered(p, all, 1), ordered(p, all, 0))
+    best := 0
+    best_score := 0 - 1000000
+    tied := []
+    i := 0
+    while i < len(ms) {
+        q := moves.make(p, ms[i])
+        if !seen_before(hist, q.b) {
+            score := 0 - search(q, depth - 1, 0 - 1000000, 1000000)
+            if best == 0 || score > best_score {
+                best_score = score
+                best = ms[i]
+                tied = [ms[i]]
+            } else {
+                // Equal-best moves share the top score: collect them
+                // and draw one below so play varies instead of always
+                // keeping the first in move order (knight/rook dances).
+                if score == best_score {
+                    tied = vec.push(tied, ms[i])
+                }
+            }
+        }
+        i = i + 1
+    }
+    if best == 0 {
+        best = ms[0]
+    } else {
+        if len(tied) > 1 {
+            (k, _) := rand.below(rand.auto_seed(), len(tied))
+            best = tied[k]
+        }
+    }
+    best
+}
+
+// True when b matches a same-side-to-move board in hist. The mover's
+// resulting board has the flipped side, so only odd-ago entries (1, 3,
+// 5 plies back) share its side to move.
+
+func seen_before(hist: [int], b: [int]) -> bool {
+    n := len(hist) / 64
+    k := 1
+    while k <= n && k <= 11 {
+        base := (n - k) * 64
+        same := true
+        i := 0
+        while i < 64 {
+            if hist[base + i] != b[i] {
+                same = false
+            }
+            i = i + 1
+        }
+        if same {
+            return true
+        }
+        k = k + 2
+    }
+    false
+}
+
+// Record b, keeping at most the last 12 positions.
+
+pub func push_hist(hist: [int], b: [int]) -> [int] {
+    out := []
+    start := len(hist) + 64 - 12 * 64
+    if start < 0 {
+        start = 0
+    }
+    i := start
+    while i < len(hist) {
+        out = vec.push(out, hist[i])
+        i = i + 1
+    }
+    i = 0
+    while i < 64 {
+        out = vec.push(out, b[i])
+        i = i + 1
+    }
+    out
+}
+
+// Score of the best move (for display, in centipawns).
+
+pub func best_score(p: board.Pos, depth: int) -> int {
+    all := moves.gen_legal(p)
+    if len(all) == 0 {
+        return 0
+    }
+    ms := concat_moves(ordered(p, all, 1), ordered(p, all, 0))
+    best := 0 - 1000000
+    i := 0
+    while i < len(ms) {
+        q := moves.make(p, ms[i])
+        score := 0 - search(q, depth - 1, 0 - 1000000, 1000000)
+        if score > best {
+            best = score
+        }
+        i = i + 1
+    }
+    best
+}
