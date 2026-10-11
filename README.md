@@ -30,7 +30,9 @@ Launch `chesz` and the lobby offers everything:
 
 Before a game you pick a clock — Casual, Blitz 5+0, or Rapid 15+10.
 After it you get a report: result, accuracy per side, worst moves,
-final eval, your record, and your ladder rating.
+final eval, your record, and your ladder rating. Step through the
+finished game first (Review), or go again instantly with flipped
+colors (Rematch).
 
 ## Board keys
 

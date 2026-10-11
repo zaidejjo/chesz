@@ -485,11 +485,15 @@ func game_loop(st: Frame, eng: person.Engine, human_side: int, duo: bool, mode: 
                 line = person.result_line(res)
             }
             draw(st, eng, hs, line, mode, style, src)
-            c := pick.pick(line, ["Review", "Done"])
+            c := pick.pick(line, ["Review", "Rematch", "Done"])
             if c == 0 {
                 st.after = 1
             } else {
-                st.after = 0
+                if c == 1 {
+                    st.after = 2
+                } else {
+                    st.after = 0
+                }
             }
             quit = true
         } else {
@@ -539,12 +543,12 @@ func start_frame(human_side: int, clock: [int]) -> Frame {
 // Shared screen session: the report (and PGN save notice) print to a
 // cooked terminal below, so the exit stays explicit — never deferred.
 
-func finish(st: Frame, eng: person.Engine, human_side: int, duo: bool, white: str, black: str) -> bool {
+func finish(st: Frame, eng: person.Engine, human_side: int, duo: bool, white: str, black: str) -> int {
     if !screen.is_tty() {
-        return false
+        return 0
     }
     if !screen.enter() {
-        return false
+        return 0
     }
     screen.hide()
     mode := screen.mode()
@@ -554,6 +558,12 @@ func finish(st: Frame, eng: person.Engine, human_side: int, duo: bool, white: st
     st = game_loop(st, eng, human_side, duo, mode, style, src)
     if st.after == 1 {
         review_loop(st)
+        c := pick.pick("Reviewed", ["Rematch", "Done"])
+        if c == 0 {
+            st.after = 2
+        } else {
+            st.after = 0
+        }
     }
     screen.exit()
     opp := ""
@@ -563,27 +573,47 @@ func finish(st: Frame, eng: person.Engine, human_side: int, duo: bool, white: st
         opp = eng.name
     }
     show_report(st, white, black, opp, delta)
-    true
+    st.after
 }
 
 pub func run(eng: person.Engine, human_side: int, clock: [int]) -> bool {
     if !screen.is_tty() {
         return false
     }
-    st := start_frame(human_side, clock)
-    if human_side == 1 {
-        finish(st, eng, human_side, false, "Human", eng.name)
-    } else {
-        finish(st, eng, human_side, false, eng.name, "Human")
+    flip := human_side
+    again := true
+    while again {
+        st := start_frame(flip, clock)
+        code := 0
+        if flip == 1 {
+            code = finish(st, eng, flip, false, "Human", eng.name)
+        } else {
+            code = finish(st, eng, flip, false, eng.name, "Human")
+        }
+        if code == 2 {
+            flip = 0 - flip
+        } else {
+            again = false
+        }
     }
+    true
 }
 
 pub func run_duo(clock: [int]) -> bool {
     if !screen.is_tty() {
         return false
     }
-    st := start_frame(1, clock)
-    finish(st, person.human(), 1, true, "Human", "Human")
+    again := true
+    while again {
+        st := start_frame(1, clock)
+        code := finish(st, person.human(), 1, true, "Human", "Human")
+        if code == 2 {
+            again = true
+        } else {
+            again = false
+        }
+    }
+    true
 }
 
 // Continue a loaded game: clock + turn stamp on the replayed frame,
@@ -595,7 +625,27 @@ pub func run_loaded(st: Frame, eng: person.Engine, human_side: int, clock: [int]
     }
     st = with_clock(st, clock)
     st.turn_ms = time.now_ms()
-    finish(st, eng, human_side, false, white, black)
+    code := finish(st, eng, human_side, false, white, black)
+    if code != 2 {
+        return true
+    }
+    flip := 0 - human_side
+    again := true
+    while again {
+        st2 := start_frame(flip, clock)
+        c2 := 0
+        if flip == 1 {
+            c2 = finish(st2, eng, flip, false, "Human", eng.name)
+        } else {
+            c2 = finish(st2, eng, flip, false, eng.name, "Human")
+        }
+        if c2 == 2 {
+            flip = 0 - flip
+        } else {
+            again = false
+        }
+    }
+    true
 }
 
 // Post-game review: step through the played moves on the big board.
