@@ -768,6 +768,22 @@ func puzzles_all_mate() {
 }
 
 @test
+func threat_radar() {
+    match fen.parse("rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR w KQkq - 0 1") {
+        .some(p) => assert_eq(game.threat_line(p, 1), "Mate threat: Qh4#")
+        .none => panic("threat FEN rejected")
+    }
+    match fen.parse("rnbqkbnr/ppp1pppp/8/3p4/4Q3/8/PPPPPPPP/RNB1KBNR w KQkq - 0 1") {
+        .some(p) => assert_eq(game.threat_line(p, 1), "Queen hangs")
+        .none => panic("hang FEN rejected")
+    }
+    match fen.parse(fen.startpos()) {
+        .some(p) => assert_eq(game.threat_line(p, 1), "")
+        .none => panic("startpos rejected")
+    }
+}
+
+@test
 func book_grew_past_sicilian() {
     // 1.e4 c5 2.Nf3 -> d6; French 3.Nc3; London 2...Nf6.
     match fen.parse("rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 0 1") {

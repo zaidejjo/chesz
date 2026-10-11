@@ -635,10 +635,73 @@ func review_loop(st: Frame) {
     }
 }
 
+// Threat radar: mate-in-1 replies and hanging queens, checked once per
+// turn (never per keypress). Mate scan only resolves checking replies,
+// so it stays cheap: makes + king tests for all, full results for checks.
+
+func mate_threat(p: board.Pos, human_side: int) -> str {
+    q := p
+    q.side = 0 - human_side
+    ms := moves.gen_legal(q)
+    i := 0
+    while i < len(ms) {
+        r := moves.make(q, ms[i])
+        if moves.in_check(r) {
+            res := person.result(r, [])
+            if res == 1 && human_side == 0 - 1 {
+                return san.notation(q, ms[i])
+            }
+            if res == 2 && human_side == 1 {
+                return san.notation(q, ms[i])
+            }
+        }
+        i = i + 1
+    }
+    ""
+}
+
+func queen_hangs(p: board.Pos, human_side: int) -> bool {
+    want := 5 * human_side
+    i := 0
+    while i < 64 {
+        if p.b[i] == want {
+            if moves.is_attacked(p.b, i, 0 - human_side) && !moves.is_attacked(p.b, i, human_side) {
+                return true
+            }
+        }
+        i = i + 1
+    }
+    false
+}
+
+pub func threat_line(p: board.Pos, human_side: int) -> str {
+    line := ""
+    m := mate_threat(p, human_side)
+    if m != "" {
+        line = "Mate threat: " + m
+    }
+    if queen_hangs(p, human_side) {
+        if len(line) > 0 {
+            line = line + " · queen hangs"
+        } else {
+            line = "Queen hangs"
+        }
+    }
+    line
+}
+
 // One human turn: cursor loop until a move is made. Returns the frame;
 // cursor -1000 signals quit-to-menu (checked by run()).
 
 func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, style: int, src: str, duo: bool) -> Frame {
+    th := threat_line(st.pos, human_side)
+    if len(th) > 0 {
+        if len(st.hint) > 0 {
+            st.hint = st.hint + " · " + th
+        } else {
+            st.hint = th
+        }
+    }
     done := false
     while !done {
         draw(st, eng, human_side, "", mode, style, src)
