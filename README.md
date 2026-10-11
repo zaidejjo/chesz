@@ -1,41 +1,120 @@
 # Chess in ZZ
 
-A complete, playable chess engine written in pure ZZ plus two registry
-packages (`rand` for tiebreak draws, `ask` for the menu/move prompts) —
-no plugins, no hand-written natives. It exists to prove the language
-can build real things: a `zz.toml` project, four modules, structs,
-recursion, copy-make search, registry dependencies, and an interactive
+A complete, playable chess engine written in pure ZZ plus registry
+packages (`rand` for variety draws, `ask` for the menu/move prompts,
+`tui` + `toast` for the upcoming board frontend) — no plugins, no
+hand-written natives. It exists to prove the language can build real
+things: a `zz.toml` project, eight modules, structs, recursion,
+copy-make search, registry + path dependencies, and an interactive
 TUI with graceful non-TTY fallbacks.
 
 ```
-examples/chess/
-  zz.toml        project manifest (depends on rand ^0.4.0)
-  src/board.zz   position model, setup, display, move names
-  src/moves.zz   legal move generation (castling, en passant, promotion),
-                 attack maps, check detection, make-move
-  src/ai.zz      material + centralization eval, negamax with alpha-beta,
-                 captures-first ordering, mate scores, repetition filter,
-                 random tiebreaks via rand
-  src/main.zz    perft self-test, AI vs AI demo, human vs AI
+src/main.zz          CLI app: menu, play/watch, gauntlet, analyze, FEN
+src/engine/          reusable core — no UI imports, any frontend works:
+  board.zz           position model, setup, display, move names
+  moves.zz           legal movegen (castling, ep, promotion), attacks,
+                     check detection, make/null-move, pin-aware filter
+  fen.zz             FEN import/export (Option, never throws)
+  san.zz             SAN display + coordinate/castle parsing
+  eval.zz            tapered eval (fast leaf path + full structure)
+  ai.zz              negamax: PVS, LMR, null-move, futility, MCP,
+                     single-reply extensions, quiescence, MVV-LVA
+  person.zz          rated personalities + ID w/ clock (search_root)
+  book.zz            14-line opening book
+src/uci/             UCI protocol interface (uses engine only)
+  uci.zz             position/go/bestmove, Skill/Elo options
+src/tui/             terminal board frontend (uses engine only)
+docs/plan-smart-engine.md  strength roadmap (what ZZ value semantics
+                           allow, what they rule out)
 ```
+
+Rule: `engine/` imports std + `rand` only — never `ask`, `tui`,
+`toast`, or any interface module. Frontends (`main`, `uci`, `tui`)
+depend inward on `chess.engine.*`. Dotted dependency imports
+(`import tui.screen`, `import toast.win`) work since the toolchain
+fix — see notes.
 
 Run with the dev toolchain (`d_zz`). First fetch the dependencies:
 
 ```bash
-cd examples/chess
 d_zz install
-d_zz run                       # interactive menu (play, watch, self-test)
-d_zz run src/main.zz perft    # perft(1..3) vs 20 / 400 / 8902
-d_zz run src/main.zz ai       # AI vs AI, depth 2, 40-ply demo
-d_zz run src/main.zz play     # human (white) vs AI, moves like e2e4
+d_zz run src/main.zz perft     # perft(1..3) vs 20 / 400 / 8902
+d_zz run src/main.zz ai        # Club vs Club, 40-ply demo
+d_zz run src/main.zz play      # human (white) vs Club, moves like e2e4
+d_zz run src/main.zz gauntlet  # Novice vs Club x4, Elo table
+d_zz run src/main.zz analyze   # Expert top-3 over startpos (FEN optional)
+d_zz run src/main.zz uci       # UCI loop for GUIs / Cutechess
+d_zz run src/main.zz tui       # board UI, you (white) vs Club
+d_zz run src/main.zz fen "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"
+d_zz run src/main.zz           # interactive menu
 ```
 
-The menu is an `ask` select list: pick Play vs engine (then your color
-and engine strength), Watch engine vs engine, or Self-test. Moves are
-typed as `e2e4` (`e7e8q` for promotion, `resign` to quit, confirmed).
+The menu is an `ask` select list: pick Play vs engine in the board UI
+or plain text (then your color and which personality), Watch engine vs
+engine (pick both), or Self-test. Text moves are typed as `e2e4`
+(`e7e8q` for promotion, `O-O` / `O-O-O` for castles, `hint` for a
+coach suggestion, `resign` to quit, confirmed). Engine replies print
+in SAN with `[book]` or think time.
+The first moves of every game come from the built-in 14-line book.
 On non-TTY stdin the prompts fall back to numbered/line input, so the
 whole flow is pipe-testable. (If stdin is *closed*, `ask` retries
 forever — upstream issue, Ctrl-C out.)
+
+## UCI
+
+`d_zz run src/main.zz uci` speaks Universal Chess Interface:
+`uci` / `isready` / `setoption name Elo|Skill Level` / `ucinewgame` /
+`position [startpos|fen ...] [moves ...]` / `go [depth|movetime|
+wtime/btime/winc/binc|infinite]` / `d` / `quit`. Replies carry
+`info depth/score/time/pv` and `bestmove`. Point Cutechess at the
+native binary for rated games:
+
+```bash
+d_zz build -o /tmp/chess src/main.zz
+printf 'uci\nisready\nposition startpos\ngo depth 6\nquit\n' | /tmp/chess uci
+```
+
+## Board UI
+
+`src/tui/` is a retained frontend on the same engine: shaded board,
+cursor (arrows/hjkl), select with Enter (targets light up), promotion
+picker, coach hint (`?`), undo (`u`), resign (`q`), check flashes via
+`toast`, dialogs via `toast.win`, screen ownership via `tui.screen`.
+Needs a TTY; otherwise it returns `false` and `main` falls back to the
+text flow. (`tui.menu`/`dialog`/`keys` stay out: `ask` ships its own
+`keys.zz` under the same namespace and the two collide — zaidejjo/zz#380.
+The ~40-line local decoder follows the `tui` numbering.)
+
+## Personalities
+
+One search, many strengths: depth + clock set the ceiling, `variety`
+(a centipawn window around best) and `blunder` (random-move rate)
+bring it down to human. Forced mates are never "varietied" away.
+
+| Engine | Elo | Depth | Move budget | Variety | Blunder |
+|--------|-----|-------|-------------|---------|---------|
+| Joker  | ~400 | — | — | — | pure chaos (uniform legal) |
+| Novice | 800 | 1 | 200 ms | 150 cp | 8% |
+| Club   | 1200 | 2 | 500 ms | 60 cp | 2.5% |
+| Expert | 1600 | 3 | 1.5 s | 25 cp | 0.8% |
+| Master | 2000 | 4 | 3 s | 0 | 0 |
+
+Measured reality (VM, dev toolchain): depth-1 ≈ 0.3 s/move, depth-2
+≈ 20 s/move, depth-4 ≈ 30+ min. **Expert/Master are native-only**
+(the AOT binary runs ~20x: depth-2 ≈ 1 s, depth-4 playable).
+Novice/Club are comfortable on the VM. Budgets above are honored by
+iterative deepening — worst case the engine falls back to depth 1.
+
+Iterative deepening guarantees a move even when the clock fires mid
+thought (worst case: the depth-1 reply). Joker is the "random rating":
+every legal move equally likely, every game a new disaster.
+
+## Draws
+
+Fifty-move rule, threefold repetition (history keys carry side +
+board, 12 deep), and dead-material detection (bare kings, single
+minor) all end games with explicit score lines. En-passant, castling
+rights, and both clocks ride through FEN and `make`/`null_move`.
 
 Native build (same sources, AOT through clang):
 
@@ -59,10 +138,26 @@ issue for the VM/AOT performance roadmap.
 ## Notes for ZZ authors
 
 - Locals/params must not reuse their own module's name (e.g. no local
-  called `moves` inside `moves.zz`): it shadows the module namespace at
-  runtime and helper resolution dies with `undefined method` while
-  `zz check` stays green. See the comment atop `src/moves.zz`.
+  called `moves` inside `moves.zz`, no param called `fen` in `fen.zz`):
+  it shadows the module namespace at runtime and helper resolution
+  dies with `undefined method` while `zz check` stays green. See the
+  comment atop `src/moves.zz`. Filed as zaidejjo/zz#376.
+- `tests/` files must import siblings as `chess.<module>` (bare
+  `import board` resolves relative to `tests/` and fails); `src/`
+  files use bare imports. The `ask` package instead nests a test
+  sub-package with per-module path deps — same effect, more files.
+- Dotted imports into *dependencies* (`import tui.screen`) now resolve
+  (toolchain fix for zaidejjo/zz#375 — verified). Only entry files
+  were reachable before. `tests/` files import engine siblings as
+  `chess.engine.<module>`; `src/engine/` files use bare relative
+  imports; interface modules (`main`, `uci`, `tui`) use the
+  `chess.engine.*` / `chess.uci.*` form.
 - Top-level statements cannot call functions defined later in the file;
   define helpers first (all files here do).
 - Match guards take pattern bindings, literals, and operators only;
   complex tests belong in the arm body (see `docs/syntax.md`).
+- ZZ arrays/maps/structs are value types: threading mutable search
+  state (transposition table, killers) through the recursion either
+  loses updates or copies per node. The engine uses stateless-only
+  selectivity (PVS, LMR, null-move, futility); see
+  `docs/plan-smart-engine.md`.

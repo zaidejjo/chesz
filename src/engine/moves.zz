@@ -161,6 +161,54 @@ func slide(b: [int], acc: [int], sq: int, side: int, drs: [int], dfs: [int]) -> 
     acc
 }
 
+// Capture-only slide: quiets never enter the list, so quiescence
+// doesn't pay to build (and copy) moves it immediately discards.
+
+func slide_caps(b: [int], acc: [int], sq: int, side: int, drs: [int], dfs: [int]) -> [int] {
+    r := board.rank_of(sq)
+    f := board.file_of(sq)
+    d := 0
+    while d < len(drs) {
+        nr := r + drs[d]
+        nf := f + dfs[d]
+        blocked := false
+        while on_board(nr, nf) && !blocked {
+            v := b[nr * 8 + nf]
+            if v == 0 {
+                nr = nr + drs[d]
+                nf = nf + dfs[d]
+            } else {
+                if v * side < 0 {
+                    acc = vec.push(acc, mv_new(sq, nr * 8 + nf, 0))
+                }
+                blocked = true
+            }
+        }
+        d = d + 1
+    }
+    acc
+}
+
+// Capture-only hop (knights, kings).
+
+func hop_caps(b: [int], acc: [int], sq: int, side: int, drs: [int], dfs: [int]) -> [int] {
+    r := board.rank_of(sq)
+    f := board.file_of(sq)
+    d := 0
+    while d < len(drs) {
+        nr := r + drs[d]
+        nf := f + dfs[d]
+        if on_board(nr, nf) {
+            v := b[nr * 8 + nf]
+            if v != 0 && v * side < 0 {
+                acc = vec.push(acc, mv_new(sq, nr * 8 + nf, 0))
+            }
+        }
+        d = d + 1
+    }
+    acc
+}
+
 // Hop to each (dr, df) offset once (knights, kings).
 
 func hop(b: [int], acc: [int], sq: int, side: int, drs: [int], dfs: [int]) -> [int] {
@@ -203,6 +251,40 @@ func gen_pawn(b: [int], acc: [int], sq: int, side: int, ep: int) -> [int] {
                 acc = vec.push(acc, mv_new(sq, two, 0))
             }
         }
+    }
+    df := 0 - 1
+    while df <= 1 {
+        if df != 0 {
+            nf := f + df
+            if nf >= 0 && nf < 8 {
+                t := one + df
+                v := b[t]
+                if v != 0 && v * side < 0 {
+                    acc = push_pawn(acc, sq, t, last)
+                } else {
+                    if t == ep && v == 0 {
+                        acc = vec.push(acc, mv_new(sq, t, 0))
+                    }
+                }
+            }
+        }
+        df = df + 1
+    }
+    acc
+}
+
+func gen_pawn_loud(b: [int], acc: [int], sq: int, side: int, ep: int) -> [int] {
+    r := board.rank_of(sq)
+    f := board.file_of(sq)
+    dir := 8 * side
+    last := 0
+    if side == 1 {
+        last = 7
+    }
+    one := sq + dir
+    // Quiet pushes count only as promotions.
+    if on_board(r + side, f) && b[one] == 0 && board.rank_of(one) == last {
+        acc = push_pawn(acc, sq, one, last)
     }
     df := 0 - 1
     while df <= 1 {
@@ -306,6 +388,46 @@ pub func gen_pseudo(p: board.Pos) -> [int] {
                                     acc = try_castle(b, acc, side, p.cast, 4, 61, 62, -1, 62)
                                     acc = try_castle(b, acc, side, p.cast, 8, 59, 58, 57, 58)
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        sq = sq + 1
+    }
+    acc
+}
+
+// Loud-only generation for quiescence: captures, en-passant, and
+// promotions. No quiets are ever built, so qsearch skips ~70% of the
+// move construction (and interpreter list-copying) per node.
+
+pub func gen_loud(p: board.Pos) -> [int] {
+    b := p.b
+    side := p.side
+    acc := []
+    sq := 0
+    while sq < 64 {
+        v := b[sq]
+        if v * side > 0 {
+            pc := v * side
+            if pc == 1 {
+                acc = gen_pawn_loud(b, acc, sq, side, p.ep)
+            } else {
+                if pc == 2 {
+                    acc = hop_caps(b, acc, sq, side, [1, 1, 0 - 1, 0 - 1, 2, 2, 0 - 2, 0 - 2], [2, 0 - 2, 2, 0 - 2, 1, 0 - 1, 1, 0 - 1])
+                } else {
+                    if pc == 3 {
+                        acc = slide_caps(b, acc, sq, side, [1, 1, 0 - 1, 0 - 1], [1, 0 - 1, 1, 0 - 1])
+                    } else {
+                        if pc == 4 {
+                            acc = slide_caps(b, acc, sq, side, [1, 0 - 1, 0, 0], [0, 0, 1, 0 - 1])
+                        } else {
+                            if pc == 5 {
+                                acc = slide_caps(b, acc, sq, side, [1, 0 - 1, 0, 0, 1, 1, 0 - 1, 0 - 1], [0, 0, 1, 0 - 1, 1, 0 - 1, 1, 0 - 1])
+                            } else {
+                                acc = hop_caps(b, acc, sq, side, [1, 1, 1, 0, 0, 0 - 1, 0 - 1, 0 - 1], [1, 0, 0 - 1, 1, 0 - 1, 1, 0, 0 - 1])
                             }
                         }
                     }
@@ -434,17 +556,125 @@ pub func make(p: board.Pos, mv: int) -> board.Pos {
     q
 }
 
+// Null move for pruning: pass the turn. En-passant evaporates, the
+// fifty-move clock ticks, the number advances after black.
+
+pub func null_move(p: board.Pos) -> board.Pos {
+    q := p
+    q.ep = -1
+    q.half = p.half + 1
+    if p.side == 0 - 1 {
+        q.full = p.full + 1
+    }
+    q.side = board.opp(p.side)
+    q
+}
+
+// Pinned piece test: walks the king ray once, no board copies.
+// A non-king, non-ep move by an unpinned piece cannot leave the king
+// in check (only vacating a shield square uncovers, and shield squares
+// sit on the ray), so gen_legal skips the make-test for those.
+
+func sign_i(x: int) -> int {
+    if x > 0 {
+        1
+    } else {
+        if x < 0 {
+            0 - 1
+        } else {
+            0
+        }
+    }
+}
+
+func abs_i2(x: int) -> int {
+    if x < 0 {
+        0 - x
+    } else {
+        x
+    }
+}
+
+func is_pinned(b: [int], sq: int, side: int, k: int) -> bool {
+    dr := board.rank_of(sq) - board.rank_of(k)
+    df := board.file_of(sq) - board.file_of(k)
+    if dr != 0 && df != 0 && abs_i2(dr) != abs_i2(df) {
+        return false
+    }
+    sr := sign_i(dr)
+    sf := sign_i(df)
+    // King ray must hit sq first; anything before it breaks the pin.
+    r := board.rank_of(k) + sr
+    f := board.file_of(k) + sf
+    while on_board(r, f) {
+        if r * 8 + f == sq {
+            r = r + sr
+            f = f + sf
+            ortho := sr == 0 || sf == 0
+            while on_board(r, f) {
+                v := b[r * 8 + f]
+                if v != 0 {
+                    if v * side < 0 {
+                        a := v
+                        if a < 0 {
+                            a = 0 - a
+                        }
+                        if ortho {
+                            return a == 4 || a == 5
+                        }
+                        return a == 3 || a == 5
+                    }
+                    return false
+                }
+                r = r + sr
+                f = f + sf
+            }
+            return false
+        }
+        if b[r * 8 + f] != 0 {
+            return false
+        }
+        r = r + sr
+        f = f + sf
+    }
+    false
+}
+
 // Legal acc: pseudo acc that do not leave the own king in check.
 
 pub func gen_legal(p: board.Pos) -> [int] {
     out := []
     cands := gen_pseudo(p)
+    if in_check(p) {
+        i := 0
+        while i < len(cands) {
+            q := make(p, cands[i])
+            k := king_sq(q.b, p.side)
+            if k >= 0 && !is_attacked(q.b, k, q.side) {
+                out = vec.push(out, cands[i])
+            }
+            i = i + 1
+        }
+        return out
+    }
+    k := king_sq(p.b, p.side)
     i := 0
     while i < len(cands) {
-        q := make(p, cands[i])
-        k := king_sq(q.b, p.side)
-        if k >= 0 && !is_attacked(q.b, k, q.side) {
-            out = vec.push(out, cands[i])
+        m := cands[i]
+        from := mv_from(m)
+        v := p.b[from]
+        pc := v
+        if pc < 0 {
+            pc = 0 - pc
+        }
+        if pc == 6 || mv_to(m) == p.ep || is_pinned(p.b, from, p.side, k) {
+            q := make(p, m)
+            kk := king_sq(q.b, p.side)
+            if kk >= 0 && !is_attacked(q.b, kk, q.side) {
+                out = vec.push(out, m)
+            }
+        } else {
+            out = vec.push(out, m)
         }
         i = i + 1
     }

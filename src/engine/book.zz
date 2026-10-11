@@ -1,0 +1,37 @@
+// Tiny built-in opening book: 14 battle-tested replies keyed by
+// placement + side. Single reply per key (deterministic, testable);
+// personalities supply the variety. Main consults it before the
+// engine while the game is young; UCI skips it (GUIs bring books).
+
+import std.str
+
+import board
+import fen
+import moves
+import san
+
+func keys() -> [str] {
+    ["rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w", "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b", "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b", "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w", "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w", "rnbqkbnr/pppp1ppp/4p3/8/4P3/8/PPPP1PPP/RNBQKBNR w", "rnbqkbnr/ppp1pppp/8/3p4/3P4/8/PPP1PPPP/RNBQKBNR w", "rnbqkb1r/pppppppp/5n2/8/3P4/8/PPP1PPPP/RNBQKBNR w", "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w", "rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w", "rnbqkbnr/pp2pppp/3p4/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R w", "rnbqkbnr/pppppppp/8/8/2P5/8/PP1PPPPP/RNBQKBNR b", "rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R b", "rnbqkbnr/pp1ppppp/2p5/8/4P3/8/PPPP1PPP/RNBQKBNR w"]
+}
+
+func replies() -> [str] {
+    ["e2e4", "e7e5", "d7d5", "g1f3", "g1f3", "d2d4", "c2c4", "c2c4", "f1b5", "f3e5", "d2d4", "e7e5", "d7d5", "d2d4"]
+}
+
+pub func probe(p: board.Pos) -> int {
+    parts := str.split(fen.generate(p), " ")
+    if len(parts) < 2 {
+        return 0
+    }
+    key := parts[0] + " " + parts[1]
+    ks := keys()
+    rs := replies()
+    i := 0
+    while i < len(ks) {
+        if ks[i] == key {
+            return san.parse_coord(rs[i], moves.gen_legal(p))
+        }
+        i = i + 1
+    }
+    0
+}

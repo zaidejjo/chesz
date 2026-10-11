@@ -1,0 +1,157 @@
+// Board renderer: pure position -> rows. No terminal, no input —
+// fully unit-testable. Highlights: cursor (reverse), selected piece,
+// legal targets, last move, king in check. Pass color=false on
+// colorless terminals (or when screen.mode() == 0).
+
+import std.colors
+import std.vec
+
+import chess.engine.board
+import chess.engine.moves
+
+pub func has_sq(v: [int], sq: int) -> bool {
+    i := 0
+    while i < len(v) {
+        if v[i] == sq {
+            return true
+        }
+        i = i + 1
+    }
+    false
+}
+
+// Cursor step with edge clamping (no wraparound — predictable).
+
+pub func step_cursor(cur: int, dx: int, dy: int) -> int {
+    f := board.file_of(cur) + dx
+    r := board.rank_of(cur) + dy
+    if f < 0 {
+        f = 0
+    }
+    if f > 7 {
+        f = 7
+    }
+    if r < 0 {
+        r = 0
+    }
+    if r > 7 {
+        r = 7
+    }
+    r * 8 + f
+}
+
+// Destination squares for the piece on `from` (empty when no piece).
+
+pub func targets_for(p: board.Pos, from: int) -> [int] {
+    out := []
+    ms := moves.gen_legal(p)
+    i := 0
+    while i < len(ms) {
+        if moves.mv_from(ms[i]) == from {
+            out = vec.push(out, moves.mv_to(ms[i]))
+        }
+        i = i + 1
+    }
+    out
+}
+
+// Every legal move from->to (promotion variants included).
+
+pub func find_moves(legal: [int], from: int, to: int) -> [int] {
+    out := []
+    i := 0
+    while i < len(legal) {
+        if moves.mv_from(legal[i]) == from && moves.mv_to(legal[i]) == to {
+            out = vec.push(out, legal[i])
+        }
+        i = i + 1
+    }
+    out
+}
+
+func piece_fg(v: int, text: str, color: bool) -> str {
+    if !color {
+        return text
+    }
+    if v > 0 {
+        colors.bright_white(text)
+    } else {
+        if v < 0 {
+            colors.yellow(text)
+        } else {
+            text
+        }
+    }
+}
+
+func shade(sq: int, text: str, color: bool) -> str {
+    if !color {
+        return text
+    }
+    f := board.file_of(sq)
+    r := board.rank_of(sq)
+    if (f + r) % 2 == 0 {
+        colors.bg_black(text)
+    } else {
+        colors.bg_bright_black(text)
+    }
+}
+
+func mark_bg(sq: int, text: str, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, color: bool) -> str {
+    if !color {
+        if sq == cursor {
+            return "[" + text + "]"
+        }
+        return " " + text + " "
+    }
+    inner := text
+    if sq == check_king {
+        inner = colors.bg_red(text)
+    } else {
+        if sq == selected {
+            inner = colors.bg_yellow(text)
+        } else {
+            if has_sq(targets, sq) {
+                inner = colors.bg_green(text)
+            } else {
+                if sq == last_from || sq == last_to {
+                    inner = colors.bg_cyan(text)
+                } else {
+                    inner = shade(sq, text, true)
+                }
+            }
+        }
+    }
+    if sq == cursor {
+        inner = colors.reverse(inner)
+    }
+    inner
+}
+
+pub func render(p: board.Pos, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, color: bool) -> [str] {
+    check_king := 0 - 1
+    if moves.in_check(p) {
+        check_king = moves.king_sq(p.b, p.side)
+    }
+    rows := []
+    r := 7
+    while r >= 0 {
+        line := str(r + 1) + " "
+        f := 0
+        while f < 8 {
+            sq := r * 8 + f
+            v := p.b[sq]
+            glyph := board.glyph(v)
+            if v == 0 {
+                glyph = " "
+            }
+            cell := piece_fg(v, " " + glyph + " ", color)
+            line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, color)
+            f = f + 1
+        }
+        rows = vec.push(rows, line)
+        r = r - 1
+    }
+    rows = vec.push(rows, "   a  b  c  d  e  f  g  h")
+    rows
+}

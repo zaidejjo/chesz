@@ -1,10 +1,18 @@
 // Chess engine tests: FEN roundtrips, clocks, movegen sanity.
 // Fast — no search beyond depth-2 perft.
 
-import chess.ai
-import chess.fen
-import chess.moves
-import chess.san
+import std.str
+
+import chess.engine.ai
+import chess.engine.book
+import chess.engine.eval
+import chess.engine.fen
+import chess.engine.moves
+import chess.engine.person
+import chess.engine.san
+import chess.main
+import chess.tui.board_view
+import chess.uci.uci
 
 @test
 func fen_startpos_roundtrip() {
@@ -150,7 +158,6 @@ func san_spot_checks() {
 
 @test
 func draw_rules() {
-    // Bare kings: dead.
     match fen.parse("8/8/4k3/8/8/4K3/8/8 w - - 0 1") {
         .some(p) => assert_eq(ai.insufficient_material(p.b), true)
         .none => panic("kings FEN rejected")
@@ -173,5 +180,244 @@ func draw_rules() {
             assert_eq(ai.repetitions(h, p), 2)
         }
         .none => panic("startpos rejected")
+    }
+}
+
+@test
+func eval_symmetry_and_material() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            // Perfect symmetry: only tempo scores.
+            assert_eq(eval.evaluate(p), 8)
+        }
+        .none => panic("startpos rejected")
+    }
+    match fen.parse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1") {
+        .some(p) => {
+            // Same board, black to move: mirror image, tempo only.
+            assert_eq(eval.evaluate(p), 8)
+        }
+        .none => panic("mirror FEN rejected")
+    }
+    // White up a knight: roughly a piece plus change.
+    match fen.parse("rnbqkb1r/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") {
+        .some(p) => {
+            s := eval.evaluate(p)
+            assert_eq(s > 200 && s < 500, true)
+        }
+        .none => panic("knight-up FEN rejected")
+    }
+}
+
+@test
+func null_move_passes() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            q := moves.null_move(p)
+            assert_eq(q.side, 0 - 1)
+            assert_eq(q.ep, 0 - 1)
+            assert_eq(q.half, 1)
+            assert_eq(q.full, 1)
+        }
+        .none => panic("startpos rejected")
+    }
+}
+
+@test
+func master_mates_in_one() {
+    // Depth-1 solver: mate-in-1 is visible at the frontier (root
+    // quiescence finds the mate), so this stays fast on the VM.
+    solver := person.Engine{name: "Solver", elo: 0, depth: 1, movems: 2000, variety: 0, blunder: 0, joker: false}
+    match fen.parse("r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 0 1") {
+        .some(p) => {
+            assert_eq(ai.best_score(p, 1) > 90000, true)
+            m := person.best_move_for(solver, p, [])
+            assert_eq(str.ends_with(san.notation(p, m), "#"), true)
+        }
+        .none => panic("mate FEN rejected")
+    }
+}
+
+@test
+func joker_always_legal() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            legal := moves.gen_legal(p)
+            t := 0
+            while t < 10 {
+                m := person.best_move_for(person.joker(), p, [])
+                found := false
+                i := 0
+                while i < len(legal) {
+                    if legal[i] == m {
+                        found = true
+                    }
+                    i = i + 1
+                }
+                assert_eq(found, true)
+                t = t + 1
+            }
+        }
+        .none => panic("startpos rejected")
+    }
+}
+
+@test
+func book_answers_openings() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            m := book.probe(p)
+            assert_eq(m != 0, true)
+            assert_eq(san.notation(p, m), "e4")
+            // After 1.e4 the book has a black reply.
+            q := moves.make(p, m)
+            r := book.probe(q)
+            assert_eq(r != 0, true)
+            assert_eq(san.notation(q, r), "e5")
+        }
+        .none => panic("startpos rejected")
+    }
+    // Empty board: no book.
+    match fen.parse("8/8/8/8/8/8/8/8 w - - 0 1") {
+        .some(p) => assert_eq(book.probe(p), 0)
+        .none => panic("empty FEN rejected")
+    }
+}
+
+@test
+func coord_parser() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            legal := moves.gen_legal(p)
+            m := san.parse_coord("e2e4", legal)
+            assert_eq(m != 0, true)
+            assert_eq(moves.mv_from(m), 12)
+            assert_eq(moves.mv_to(m), 28)
+            // No castling through a full back rank.
+            assert_eq(san.parse_coord("O-O", legal), 0)
+            assert_eq(san.parse_coord("xxxx", legal), 0)
+        }
+        .none => panic("startpos rejected")
+    }
+    match fen.parse("8/4P3/8/8/8/8/8/4K2k w - - 0 1") {
+        .some(p) => {
+            m := san.parse_coord("e7e8q", moves.gen_legal(p))
+            assert_eq(moves.mv_promo(m), 5)
+        }
+        .none => panic("promo FEN rejected")
+    }
+}
+
+@test
+func uci_score_lines() {
+    assert_eq(uci.score_line(150), "score cp 150")
+    assert_eq(uci.score_line(-40), "score cp -40")
+    assert_eq(uci.score_line(99998), "score mate 1")
+    assert_eq(uci.score_line(-99997), "score mate -2")
+}
+
+@test
+func elo_table_anchors() {
+    assert_eq(main.elo_of_pm(500), 0)
+    assert_eq(main.elo_of_pm(1000), 800)
+    assert_eq(main.elo_of_pm(0), 0 - 800)
+    e := main.elo_of_pm(750)
+    assert_eq(e > 150 && e < 250, true)
+    assert_eq(main.elo_of_pm(250), 0 - main.elo_of_pm(750))
+}
+
+func has_move(ms: [int], m: int) -> bool {
+    i := 0
+    while i < len(ms) {
+        if ms[i] == m {
+            return true
+        }
+        i = i + 1
+    }
+    false
+}
+
+func check_loud_parity(fen_text: str) {
+    match fen.parse(fen_text) {
+        .some(p) => {
+            pseudo := moves.gen_pseudo(p)
+            loud := moves.gen_loud(p)
+            i := 0
+            while i < len(loud) {
+                assert_eq(has_move(pseudo, loud[i]), true)
+                assert_eq(ai.is_loud(p, loud[i]), true)
+                i = i + 1
+            }
+            n := 0
+            i = 0
+            while i < len(pseudo) {
+                if ai.is_loud(p, pseudo[i]) {
+                    n = n + 1
+                    assert_eq(has_move(loud, pseudo[i]), true)
+                }
+                i = i + 1
+            }
+            assert_eq(len(loud), n)
+        }
+        .none => panic("bad FEN: " + fen_text)
+    }
+}
+
+@test
+func loud_matches_pseudo() {
+    check_loud_parity(fen.startpos())
+    check_loud_parity(fen.kiwipete())
+    check_loud_parity("r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 0 1")
+    check_loud_parity("8/4P3/8/8/8/8/8/4K2k w - - 0 1")
+}
+
+@test
+func view_renders_nine_plain_rows() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, false)
+            assert_eq(len(rows), 9)
+            i := 0
+            while i < len(rows) {
+                assert_eq(str.contains(rows[i], "\e"), false)
+                i = i + 1
+            }
+            // Rank-8 row leads with "8", footer names the files.
+            assert_eq(str.starts_with(rows[0], "8 "), true)
+            assert_eq(str.contains(rows[8], "a  b"), true)
+        }
+        .none => panic("startpos rejected")
+    }
+}
+
+@test
+func view_cursor_and_targets() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            // e2 pawn has exactly e3+e4.
+            tg := board_view.targets_for(p, 12)
+            assert_eq(len(tg), 2)
+            assert_eq(board_view.has_sq(tg, 20), true)
+            assert_eq(board_view.has_sq(tg, 28), true)
+            // Empty square: no targets.
+            assert_eq(len(board_view.targets_for(p, 27)), 0)
+            // Cursor clamps at the edges, never wraps.
+            assert_eq(board_view.step_cursor(0, 0 - 1, 0 - 1), 0)
+            assert_eq(board_view.step_cursor(63, 1, 1), 63)
+            assert_eq(board_view.step_cursor(0, 1, 0), 1)
+        }
+        .none => panic("startpos rejected")
+    }
+}
+
+@test
+func view_promo_variants() {
+    match fen.parse("8/4P3/8/8/8/8/8/4K2k w - - 0 1") {
+        .some(p) => {
+            legal := moves.gen_legal(p)
+            opts := board_view.find_moves(legal, 52, 60)
+            assert_eq(len(opts), 4)
+        }
+        .none => panic("promo FEN rejected")
     }
 }

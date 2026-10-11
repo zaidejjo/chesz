@@ -1,0 +1,274 @@
+// SAN display: e4, Nf3, O-O, exd8=Q+, Qxf7#. Coordinate input stays
+// the move-entry format; SAN is what humans read in the UI and PGN.
+
+import board
+import moves
+
+func piece_letter(pc: int) -> str {
+    if pc == 2 {
+        "N"
+    } else {
+        if pc == 3 {
+            "B"
+        } else {
+            if pc == 4 {
+                "R"
+            } else {
+                if pc == 5 {
+                    "Q"
+                } else {
+                    "K"
+                }
+            }
+        }
+    }
+}
+
+func promo_letter(promo: int) -> str {
+    if promo == 5 {
+        "=Q"
+    } else {
+        if promo == 4 {
+            "=R"
+        } else {
+            if promo == 3 {
+                "=B"
+            } else {
+                "=N"
+            }
+        }
+    }
+}
+
+// Coordinate + castle parsing against the legal list ("e2e4",
+// "e7e8q", "O-O", "O-O-O", "0-0"); 0 when illegal. Shared by the
+// human prompt and the UCI `position ... moves` applier.
+
+func pfile(c: str) -> int {
+    if c == "a" {
+        0
+    } else {
+        if c == "b" {
+            1
+        } else {
+            if c == "c" {
+                2
+            } else {
+                if c == "d" {
+                    3
+                } else {
+                    if c == "e" {
+                        4
+                    } else {
+                        if c == "f" {
+                            5
+                        } else {
+                            if c == "g" {
+                                6
+                            } else {
+                                if c == "h" {
+                                    7
+                                } else {
+                                    0 - 1
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+func prank(c: str) -> int {
+    if c == "1" {
+        0
+    } else {
+        if c == "2" {
+            1
+        } else {
+            if c == "3" {
+                2
+            } else {
+                if c == "4" {
+                    3
+                } else {
+                    if c == "5" {
+                        4
+                    } else {
+                        if c == "6" {
+                            5
+                        } else {
+                            if c == "7" {
+                                6
+                            } else {
+                                if c == "8" {
+                                    7
+                                } else {
+                                    0 - 1
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+func find_castle(legal: [int], wto: int, bto: int) -> int {
+    i := 0
+    while i < len(legal) {
+        m := legal[i]
+        from := moves.mv_from(m)
+        to := moves.mv_to(m)
+        if (from == 4 && to == wto) || (from == 60 && to == bto) {
+            if to - from == 2 || from - to == 2 {
+                return m
+            }
+        }
+        i = i + 1
+    }
+    0
+}
+
+pub func parse_coord(text: str, legal: [int]) -> int {
+    if text == "O-O" || text == "0-0" {
+        return find_castle(legal, 6, 62)
+    }
+    if text == "O-O-O" || text == "0-0-0" {
+        return find_castle(legal, 2, 58)
+    }
+    if len(text) < 4 {
+        return 0
+    }
+    f0 := pfile(text[0])
+    r0 := prank(text[1])
+    f1 := pfile(text[2])
+    r1 := prank(text[3])
+    if f0 < 0 || r0 < 0 || f1 < 0 || r1 < 0 {
+        return 0
+    }
+    from := f0 + r0 * 8
+    to := f1 + r1 * 8
+    promo := 0 - 1
+    if len(text) >= 5 {
+        pc := text[4]
+        if pc == "q" {
+            promo = 5
+        } else {
+            if pc == "r" {
+                promo = 4
+            } else {
+                if pc == "b" {
+                    promo = 3
+                } else {
+                    if pc == "n" {
+                        promo = 2
+                    } else {
+                        return 0
+                    }
+                }
+            }
+        }
+    }
+    i := 0
+    while i < len(legal) {
+        m := legal[i]
+        if moves.mv_from(m) == from && moves.mv_to(m) == to {
+            if promo < 0 || moves.mv_promo(m) == promo {
+                return m
+            }
+        }
+        i = i + 1
+    }
+    0
+}
+
+// Standard disambiguation: same piece, same target, another origin.
+
+func disambig(p: board.Pos, mv: int, pc: int, to: int) -> str {
+    from := moves.mv_from(mv)
+    ff := board.file_of(from)
+    rf := board.rank_of(from)
+    same_file := false
+    same_rank := false
+    found := false
+    ms := moves.gen_legal(p)
+    i := 0
+    while i < len(ms) {
+        o := ms[i]
+        if moves.mv_to(o) == to && moves.mv_from(o) != from {
+            v := p.b[moves.mv_from(o)]
+            a := v
+            if a < 0 {
+                a = 0 - a
+            }
+            if a == pc {
+                found = true
+                if board.file_of(moves.mv_from(o)) == ff {
+                    same_file = true
+                }
+                if board.rank_of(moves.mv_from(o)) == rf {
+                    same_rank = true
+                }
+            }
+        }
+        i = i + 1
+    }
+    if !found {
+        return ""
+    }
+    if !same_file {
+        return board.file_char(ff)
+    }
+    if !same_rank {
+        return str(rf + 1)
+    }
+    board.file_char(ff) + str(rf + 1)
+}
+
+pub func notation(p: board.Pos, mv: int) -> str {
+    from := moves.mv_from(mv)
+    to := moves.mv_to(mv)
+    promo := moves.mv_promo(mv)
+    v := p.b[from]
+    pc := v
+    if pc < 0 {
+        pc = 0 - pc
+    }
+    s := ""
+    if pc == 6 && (to - from == 2 || from - to == 2) {
+        if to == 6 || to == 62 {
+            s = "O-O"
+        } else {
+            s = "O-O-O"
+        }
+    } else {
+        if pc == 1 {
+            if p.b[to] != 0 || to == p.ep {
+                s = board.file_char(board.file_of(from)) + "x" + board.sq_name(to)
+            } else {
+                s = board.sq_name(to)
+            }
+            if promo != 0 {
+                s = s + promo_letter(promo)
+            }
+        } else {
+            s = piece_letter(pc) + disambig(p, mv, pc, to)
+            if p.b[to] != 0 {
+                s = s + "x"
+            }
+            s = s + board.sq_name(to)
+        }
+    }
+    q := moves.make(p, mv)
+    if moves.in_check(q) {
+        if len(moves.gen_legal(q)) == 0 {
+            s = s + "#"
+        } else {
+            s = s + "+"
+        }
+    }
+    s
+}

@@ -1,0 +1,369 @@
+// Retained board UI: owns the screen, dispatches single keys, floats
+// panels over the position. Engine-only game logic (person.result,
+// book, search); presentation via tui.screen/keys/menu/dialog and a
+// toast.flash on check. Non-TTY callers get `false` and should fall
+// back to the ask flow in main.
+
+import std.str
+import std.term
+import std.vec
+
+import chess.engine.ai
+import chess.engine.board
+import chess.engine.book
+import chess.engine.moves
+import chess.engine.person
+import chess.engine.san
+import chess.tui.board_view
+import toast.toast
+import toast.win
+import tui.screen
+
+// Local key decoder (arrows 1000-1003, the tui/ask numbering): tui.keys
+// cannot load here — ask ships its own keys.zz under the same namespace
+// and the two collide (upstream). term.poll keeps lone ESC instant.
+
+func raw_byte() -> int {
+    match term.read_key() {
+        .ok(k) => k
+        .err(_) => 0 - 1
+    }
+}
+
+func read_seq() -> int {
+    b2 := raw_byte()
+    if b2 != 91 {
+        return 27
+    }
+    b3 := raw_byte()
+    if b3 == 65 {
+        return 1002
+    }
+    if b3 == 66 {
+        return 1003
+    }
+    if b3 == 67 {
+        return 1001
+    }
+    if b3 == 68 {
+        return 1000
+    }
+    27
+}
+
+func read_key() -> int {
+    b := raw_byte()
+    if b != 27 {
+        return b
+    }
+    match term.poll(50) {
+        .ok(v) => {
+            if v {
+                return read_seq()
+            }
+            27
+        }
+        .err(_) => 27
+    }
+}
+
+pub struct Frame {
+    pos: board.Pos,
+    hist: [int],
+    sans: [str],
+    played: [int],
+    cursor: int,
+    selected: int,
+    targets: [int],
+    last_from: int,
+    last_to: int,
+    hint: str,
+}
+
+func fresh_frame(human_side: int) -> Frame {
+    cur := 12
+    if human_side == 0 - 1 {
+        cur = 52
+    }
+    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: ""}
+}
+
+func replay(played: [int]) -> Frame {
+    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: ""}
+    i := 0
+    while i < len(played) {
+        st.sans = vec.push(st.sans, san.notation(st.pos, played[i]))
+        st.hist = ai.push_hist(st.hist, st.pos)
+        st.pos = moves.make(st.pos, played[i])
+        st.last_from = moves.mv_from(played[i])
+        st.last_to = moves.mv_to(played[i])
+        st.played = vec.push(st.played, played[i])
+        i = i + 1
+    }
+    st.cursor = st.last_to
+    st
+}
+
+func side_name(side: int) -> str {
+    if side == 1 {
+        "White"
+    } else {
+        "Black"
+    }
+}
+
+func panel(st: Frame, eng: person.Engine, human_side: int, extra: str) -> [str] {
+    out := []
+    out = vec.push(out, "ZZ Chess 0.2.0")
+    out = vec.push(out, eng.name + " (" + str(eng.elo) + ")")
+    out = vec.push(out, "You play " + side_name(human_side))
+    out = vec.push(out, "To move: " + side_name(st.pos.side))
+    last := "—"
+    if len(st.sans) > 0 {
+        last = st.sans[len(st.sans) - 1]
+    }
+    out = vec.push(out, "Last: " + last + "  (" + str(len(st.played)) + " ply)")
+    if len(st.hint) > 0 {
+        out = vec.push(out, "Coach: " + st.hint)
+    }
+    if len(extra) > 0 {
+        out = vec.push(out, extra)
+    }
+    out = vec.push(out, "")
+    out = vec.push(out, "arrows/hjkl move · enter select")
+    out = vec.push(out, "? coach hint · u undo · q resign")
+    while len(out) < 11 {
+        out = vec.push(out, "")
+    }
+    out
+}
+
+func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, color: bool) {
+    rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, color)
+    frame := win.overlay(rows, panel(st, eng, human_side, extra), 30, 0)
+    screen.goto(0, 0)
+    screen.write(str.join(frame, "\r\n"))
+    screen.flush()
+}
+
+func do_move(st: Frame, m: int) -> Frame {
+    st.sans = vec.push(st.sans, san.notation(st.pos, m))
+    st.hist = ai.push_hist(st.hist, st.pos)
+    st.pos = moves.make(st.pos, m)
+    st.last_from = moves.mv_from(m)
+    st.last_to = moves.mv_to(m)
+    st.played = vec.push(st.played, m)
+    st.cursor = st.last_to
+    st.selected = 0 - 1
+    st.targets = []
+    st.hint = ""
+    if moves.in_check(st.pos) && person.result(st.pos, st.hist) == 0 {
+        flashed := toast.flash("Check!", 2, 900)
+        if flashed < 0 {
+            st.hint = "Check!"
+        }
+    }
+    st
+}
+
+func pick_promo(legal: [int], from: int, to: int) -> int {
+    opts := board_view.find_moves(legal, from, to)
+    if len(opts) == 0 {
+        return 0
+    }
+    if moves.mv_promo(opts[0]) == 0 {
+        return opts[0]
+    }
+    c := win.show("Promote to", ["Pick the promotion piece:"], ["Queen", "Rook", "Bishop", "Knight"])
+    if c < 0 {
+        return 0
+    }
+    want := 5
+    if c == 1 {
+        want = 4
+    } else {
+        if c == 2 {
+            want = 3
+        } else {
+            if c == 3 {
+                want = 2
+            }
+        }
+    }
+    i := 0
+    while i < len(opts) {
+        if moves.mv_promo(opts[i]) == want {
+            return opts[i]
+        }
+        i = i + 1
+    }
+    opts[0]
+}
+
+func key_dx(k: int) -> int {
+    if k == 1000 || k == 104 {
+        0 - 1
+    } else {
+        if k == 1001 || k == 108 {
+            1
+        } else {
+            0
+        }
+    }
+}
+
+func key_dy(k: int) -> int {
+    if k == 1002 || k == 107 {
+        1
+    } else {
+        if k == 1003 || k == 106 {
+            0 - 1
+        } else {
+            0
+        }
+    }
+}
+
+pub func run(eng: person.Engine, human_side: int) -> bool {
+    if !screen.is_tty() {
+        return false
+    }
+    if !screen.enter() {
+        return false
+    }
+    defer screen.exit()
+    color := screen.mode() > 0
+    st := fresh_frame(human_side)
+    quit := false
+    while !quit {
+        res := person.result(st.pos, st.hist)
+        if res != 0 {
+            draw(st, eng, human_side, person.result_line(res), color)
+            win.show(person.result_line(res), ["played " + str(len(st.played)) + " plies vs " + eng.name], ["OK"])
+            quit = true
+        } else {
+            if st.pos.side == human_side {
+                st = human_frame(st, eng, human_side, color)
+                if st.cursor == 0 - 1000 {
+                    quit = true
+                }
+            } else {
+                draw(st, eng, human_side, "thinking…", color)
+                m := book.probe(st.pos)
+                if m == 0 {
+                    m = person.best_move_for(eng, st.pos, st.hist)
+                }
+                st = do_move(st, m)
+            }
+        }
+    }
+    true
+}
+
+// One human turn: cursor loop until a move is made. Returns the frame;
+// cursor -1000 signals quit-to-menu (checked by run()).
+
+func human_frame(st: Frame, eng: person.Engine, human_side: int, color: bool) -> Frame {
+    done := false
+    while !done {
+        draw(st, eng, human_side, "", color)
+        k := read_key()
+        if k == 0 - 1 || k == 3 {
+            st.cursor = 0 - 1000
+            done = true
+        } else {
+            if k == 113 {
+                if win.show("Resign?", ["Resign this game?"], ["Resign", "Keep playing"]) == 0 {
+                    st.cursor = 0 - 1000
+                    done = true
+                }
+            } else {
+                if k == 27 {
+                    st.selected = 0 - 1
+                    st.targets = []
+                } else {
+                    if k == 104 || k == 106 || k == 107 || k == 108 || k == 1002 || k == 1003 || k == 1000 || k == 1001 {
+                        st.cursor = board_view.step_cursor(st.cursor, key_dx(k), key_dy(k))
+                    } else {
+                        if k == 13 || k == 32 {
+                            st = press(st, human_side)
+                            if st.selected == 0 - 2 {
+                                st.selected = 0 - 1
+                                done = true
+                            }
+                        } else {
+                            if k == 63 {
+                                st.hint = hint_for(st)
+                            } else {
+                                if k == 117 {
+                                    st = undo(st, human_side)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    st
+}
+
+// Enter/space: select own piece, or move to a target. A completed move
+// sets selected to -2 (move-done sentinel, translated by human_frame).
+
+func press(st: Frame, human_side: int) -> Frame {
+    if st.selected < 0 {
+        v := st.pos.b[st.cursor]
+        if v * human_side > 0 {
+            st.selected = st.cursor
+            st.targets = board_view.targets_for(st.pos, st.cursor)
+        }
+        return st
+    }
+    if board_view.has_sq(st.targets, st.cursor) {
+        legal := moves.gen_legal(st.pos)
+        m := pick_promo(legal, st.selected, st.cursor)
+        if m != 0 {
+            st = do_move(st, m)
+            st.selected = 0 - 2
+            return st
+        }
+    }
+    v := st.pos.b[st.cursor]
+    if v * human_side > 0 {
+        st.selected = st.cursor
+        st.targets = board_view.targets_for(st.pos, st.cursor)
+    } else {
+        st.selected = 0 - 1
+        st.targets = []
+    }
+    st
+}
+
+func slice_moves(played: [int], n: int) -> [int] {
+    out := []
+    i := 0
+    while i < n && i < len(played) {
+        out = vec.push(out, played[i])
+        i = i + 1
+    }
+    out
+}
+
+func undo(st: Frame, human_side: int) -> Frame {
+    if st.pos.side != human_side || len(st.played) < 2 {
+        return st
+    }
+    st2 := replay(slice_moves(st.played, len(st.played) - 2))
+    st2.cursor = st.cursor
+    st2
+}
+
+func hint_for(st: Frame) -> str {
+    m := person.best_move_for(person.expert(), st.pos, st.hist)
+    if m == 0 {
+        ""
+    } else {
+        san.notation(st.pos, m)
+    }
+}

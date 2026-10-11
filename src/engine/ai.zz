@@ -1,79 +1,14 @@
-// Evaluation (material, side-to-move perspective) and negamax search
-// with alpha-beta pruning. Mate scores: 100000 adjusted by depth so
+// Negamax search with alpha-beta pruning, PVS, LMR, null-move pruning
+// and futility pruning. Evaluation lives in eval.zz (tapered,
+// side-to-move perspective). Mate scores: 100000 adjusted by depth so
 // faster mates rank higher.
 
 import std.vec
 
 import board
+import eval
 import moves
 import rand
-
-pub func piece_val(pc: int) -> int {
-    if pc == 1 {
-        100
-    } else {
-        if pc == 2 {
-            320
-        } else {
-            if pc == 3 {
-                330
-            } else {
-                if pc == 4 {
-                    500
-                } else {
-                    if pc == 5 {
-                        900
-                    } else {
-                        0
-                    }
-                }
-            }
-        }
-    }
-}
-
-// Small centralization bonus so equal-material moves don't all tie.
-
-func pst(pc: int, f: int, r: int) -> int {
-    if f >= 2 && f <= 5 && r >= 2 && r <= 5 {
-        if pc == 1 {
-            6
-        } else {
-            if pc == 2 {
-                12
-            } else {
-                if pc == 3 {
-                    4
-                } else {
-                    0
-                }
-            }
-        }
-    } else {
-        0
-    }
-}
-
-pub func evaluate(p: board.Pos) -> int {
-    s := 0
-    i := 0
-    while i < 64 {
-        v := p.b[i]
-        if v > 0 {
-            s = s + piece_val(v) + pst(v, board.file_of(i), board.rank_of(i))
-        } else {
-            if v < 0 {
-                s = s - piece_val(0 - v) - pst(0 - v, board.file_of(i), board.rank_of(i))
-            }
-        }
-        i = i + 1
-    }
-    if p.side == 1 {
-        s
-    } else {
-        0 - s
-    }
-}
 
 // MVV-LVA loud-move score: most valuable victim, then cheapest
 // attacker, promotions just below winning captures. Quiet moves score
@@ -94,14 +29,14 @@ func loud_score(p: board.Pos, mv: int) -> int {
     if vic == 0 && att == 1 && to == p.ep {
         vic = 1
     }
-    score := piece_val(vic) * 10 - piece_val(att) / 100
+    score := eval.piece_val(vic) * 10 - eval.piece_val(att) / 100
     if moves.mv_promo(mv) != 0 {
         score = score + 5000
     }
     score
 }
 
-func is_loud(p: board.Pos, mv: int) -> bool {
+pub func is_loud(p: board.Pos, mv: int) -> bool {
     if moves.mv_promo(mv) != 0 {
         true
     } else {
@@ -171,7 +106,7 @@ func vec_insert(v: [int], at: int, x: int) -> [int] {
 func qsearch(p: board.Pos, alpha: int, beta: int, qd: int) -> int {
     if moves.in_check(p) {
         if qd <= 0 {
-            return evaluate(p)
+            return eval.fast(p)
         }
         ms := moves.gen_legal(p)
         if len(ms) == 0 {
@@ -192,7 +127,7 @@ func qsearch(p: board.Pos, alpha: int, beta: int, qd: int) -> int {
         }
         return a
     }
-    stand := evaluate(p)
+    stand := eval.fast(p)
     if stand >= beta {
         return stand
     }
@@ -203,23 +138,120 @@ func qsearch(p: board.Pos, alpha: int, beta: int, qd: int) -> int {
     if qd <= 0 {
         return a
     }
-    all := moves.gen_pseudo(p)
-    loud := []
+    all := moves.gen_loud(p)
+    loud := ordered(p, all, 1)
     i := 0
-    while i < len(all) {
-        if is_loud(p, all[i]) {
-            loud = vec.push(loud, all[i])
+    while i < len(loud) {
+        if delta_ok(p, loud[i], stand, a) {
+            // Pseudo-loud may leave the king hanging; skip illegal ones.
+            q := moves.make(p, loud[i])
+            k := moves.king_sq(q.b, p.side)
+            if k >= 0 && !moves.is_attacked(q.b, k, q.side) {
+                score := 0 - qsearch(q, 0 - beta, 0 - a, qd - 1)
+                if score >= beta {
+                    return score
+                }
+                if score > a {
+                    a = score
+                }
+            }
         }
         i = i + 1
     }
-    loud = ordered(p, loud, 1)
-    i = 0
-    while i < len(loud) {
-        // Pseudo-loud may leave the king hanging; skip illegal ones.
-        q := moves.make(p, loud[i])
-        k := moves.king_sq(q.b, p.side)
-        if k >= 0 && !moves.is_attacked(q.b, k, q.side) {
-            score := 0 - qsearch(q, 0 - beta, 0 - a, qd - 1)
+    a
+}
+
+// Delta pruning: a capture that cannot reach alpha even with a generous
+// margin is skipped (promotions always play — they change the board).
+
+func delta_ok(p: board.Pos, mv: int, stand: int, alpha: int) -> bool {
+    if moves.mv_promo(mv) != 0 {
+        return true
+    }
+    to := moves.mv_to(mv)
+    vic := p.b[to]
+    if vic < 0 {
+        vic = 0 - vic
+    }
+    if vic == 0 {
+        // En-passant victim sits off-target.
+        vic = 1
+    }
+    stand + eval.piece_val(vic) + 150 >= alpha
+}
+
+pub func search(p: board.Pos, depth: int, alpha: int, beta: int) -> int {
+    // Horizon hands off to quiescence (captures resolve, checks evade)
+    // instead of a blind static eval.
+    if depth == 0 {
+        return qsearch(p, alpha, beta, 4)
+    }
+    all := moves.gen_legal(p)
+    if len(all) == 0 {
+        if moves.in_check(p) {
+            return 0 - 100000 - depth
+        }
+        return 0
+    }
+    ic := moves.in_check(p)
+    if ic && len(all) == 1 && depth <= 4 {
+        // Single-reply extension: forced lines see one ply deeper.
+        // Self-limiting (replies are rarely unique twice) and capped.
+        depth = depth + 1
+    }
+    se := eval.evaluate(p)
+    // Null-move pruning: skip moving when the static eval already
+    // fails high. Never in check (evasion is forced), needs depth.
+    if depth >= 3 && !ic && se >= beta {
+        np := moves.null_move(p)
+        ns := 0 - search(np, depth - 3, 0 - beta, 0 - beta + 1)
+        if ns >= beta {
+            return ns
+        }
+    }
+    // Futility at the frontier: stand pat plus a rook still fails low,
+    // so only loud moves can change anything.
+    loud_only := false
+    if depth == 1 && !ic && se + 120 <= alpha {
+        loud_only = true
+    }
+    ms := concat_moves(ordered(p, all, 1), ordered(p, all, 0))
+    a := alpha
+    i := 0
+    first := true
+    while i < len(ms) {
+        if !loud_only || is_loud(p, ms[i]) {
+            q := moves.make(p, ms[i])
+            score := 0
+            if first {
+                score = 0 - search(q, depth - 1, 0 - beta, 0 - a)
+                first = false
+            } else {
+                loud := is_loud(p, ms[i])
+                if depth <= 3 && !ic && !loud && i >= 4 + depth * depth && se + 100 * depth <= alpha {
+                    // Move-count pruning: late, quiet, and far below
+                    // alpha — these never fail high.
+                    score = a
+                } else {
+                    // LMR: late quiet moves earn a shallower look first;
+                    // anything that looks good gets the full re-search.
+                    red := 0
+                    if depth >= 3 && i >= 4 && !loud && !ic {
+                        red = 1
+                        if depth >= 5 && i >= 8 {
+                            red = 2
+                        }
+                    }
+                    score = 0 - search(q, depth - 1 - red, 0 - a - 1, 0 - a)
+                    if red > 0 && score > a {
+                        score = 0 - search(q, depth - 1, 0 - a - 1, 0 - a)
+                    }
+                    if score > a && score < beta {
+                        score = 0 - search(q, depth - 1, 0 - beta, 0 - a)
+                    }
+                }
+            }
+            // Negate bounds through the recursion (negamax).
             if score >= beta {
                 return score
             }
@@ -232,35 +264,8 @@ func qsearch(p: board.Pos, alpha: int, beta: int, qd: int) -> int {
     a
 }
 
-func search(p: board.Pos, depth: int, alpha: int, beta: int) -> int {
-    // Horizon hands off to quiescence (captures resolve, checks evade)
-    // instead of a blind static eval.
-    if depth == 0 {
-        return qsearch(p, alpha, beta, 6)
-    }
-    all := moves.gen_legal(p)
-    if len(all) == 0 {
-        if moves.in_check(p) {
-            return 0 - 100000 - depth
-        }
-        return 0
-    }
-    ms := concat_moves(ordered(p, all, 1), ordered(p, all, 0))
-    a := alpha
-    i := 0
-    while i < len(ms) {
-        q := moves.make(p, ms[i])
-        // Negate bounds through the recursion (negamax).
-        score := 0 - search(q, depth - 1, 0 - beta, 0 - a)
-        if score >= beta {
-            return score
-        }
-        if score > a {
-            a = score
-        }
-        i = i + 1
-    }
-    a
+pub func order_moves(p: board.Pos, ms: [int]) -> [int] {
+    concat_moves(ordered(p, ms, 1), ordered(p, ms, 0))
 }
 
 func concat_moves(a: [int], b: [int]) -> [int] {
@@ -321,7 +326,7 @@ pub func best_move(p: board.Pos, depth: int, hist: [int]) -> int {
 // 65 ints (side + 64 squares), most recent last; only odd-ago entries
 // (1, 3, 5 plies back) share the mover's resulting side to move.
 
-func seen_before(hist: [int], side: int, b: [int]) -> bool {
+pub func seen_before(hist: [int], side: int, b: [int]) -> bool {
     n := len(hist) / 65
     k := 1
     while k <= n && k <= 11 {

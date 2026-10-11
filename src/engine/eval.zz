@@ -1,0 +1,386 @@
+// Tapered evaluation. Piece-square values are closed-form formulas
+// matching the classic tables within a few centipawns — the VM cannot
+// afford 768-entry table literals rebuilt at every leaf. Only the king
+// value interpolates by game phase (corner safety -> centralization);
+// everything else is phase-stable. Sign contract: side-to-move
+// perspective, tempo included.
+
+import std.vec
+
+import board
+
+pub func piece_val(pc: int) -> int {
+    if pc == 1 {
+        100
+    } else {
+        if pc == 2 {
+            320
+        } else {
+            if pc == 3 {
+                330
+            } else {
+                if pc == 4 {
+                    500
+                } else {
+                    if pc == 5 {
+                        900
+                    } else {
+                        0
+                    }
+                }
+            }
+        }
+    }
+}
+
+func abs_i(x: int) -> int {
+    if x < 0 {
+        0 - x
+    } else {
+        x
+    }
+}
+
+// Manhattan distance from the center, doubled (0..14). Shared by every
+// centralization term below.
+
+func center_dist(f: int, r: int) -> int {
+    abs_i(f * 2 - 7) + abs_i(r * 2 - 7)
+}
+
+func center_file(f: int) -> int {
+    if f >= 2 && f <= 5 {
+        4
+    } else {
+        0
+    }
+}
+
+// Square value for a white piece on (f, r) with 0-based rank r.
+// Callers mirror black pieces (rank 7 - r) before calling.
+
+func square_val(pc: int, f: int, r: int) -> int {
+    if pc == 1 {
+        r * 8 + center_file(f)
+    } else {
+        if pc == 2 {
+            (14 - center_dist(f, r)) * 3
+        } else {
+            if pc == 3 {
+                (14 - center_dist(f, r)) * 2
+            } else {
+                if pc == 4 {
+                    14 - center_dist(f, r) + seventh_bonus(r)
+                } else {
+                    if pc == 5 {
+                        14 - center_dist(f, r)
+                    } else {
+                        0
+                    }
+                }
+            }
+        }
+    }
+}
+
+func seventh_bonus(r: int) -> int {
+    if r == 6 {
+        12
+    } else {
+        0
+    }
+}
+
+// King value interpolates: corners early, center late. phase counts
+// 24 (open) down to 0 (bare); caller clamps.
+
+func king_val(f: int, r: int, phase: int) -> int {
+    mg := center_dist(f, r) * 4
+    eg := (14 - center_dist(f, r)) * 4
+    (mg * phase + eg * (24 - phase)) / 24
+}
+
+func phase_w(pc: int) -> int {
+    if pc == 2 || pc == 3 {
+        1
+    } else {
+        if pc == 4 {
+            2
+        } else {
+            if pc == 5 {
+                4
+            } else {
+                0
+            }
+        }
+    }
+}
+
+func zero8() -> [int] {
+    out := [0]
+    i := 1
+    while i < 8 {
+        out = vec.push(out, 0)
+        i = i + 1
+    }
+    out
+}
+
+// Leaf eval for quiescence: material + squares + king swing only.
+// No pawn census, no structure, no shields — ~5x cheaper, and tactics
+// (what qsearch resolves) live in material anyway.
+
+pub func fast(p: board.Pos) -> int {
+    s := 0
+    phase_mat := 0
+    wk := 0 - 1
+    bk := 0 - 1
+    i := 0
+    while i < 64 {
+        v := p.b[i]
+        if v != 0 {
+            f := board.file_of(i)
+            r := board.rank_of(i)
+            if v > 0 {
+                s = s + piece_val(v) + square_val(v, f, r)
+                phase_mat = phase_mat + phase_w(v)
+                if v == 6 {
+                    wk = i
+                }
+            } else {
+                a := 0 - v
+                s = s - piece_val(a) - square_val(a, f, 7 - r)
+                phase_mat = phase_mat + phase_w(a)
+                if a == 6 {
+                    bk = i
+                }
+            }
+        }
+        i = i + 1
+    }
+    phase := phase_mat
+    if phase > 24 {
+        phase = 24
+    }
+    if wk >= 0 {
+        s = s + king_val(board.file_of(wk), board.rank_of(wk), phase)
+    }
+    if bk >= 0 {
+        s = s - king_val(board.file_of(bk), 7 - board.rank_of(bk), phase)
+    }
+    if p.side == 1 {
+        s + 8
+    } else {
+        0 - s + 8
+    }
+}
+
+pub func evaluate(p: board.Pos) -> int {
+    s := 0
+    phase_mat := 0
+    wb := 0
+    bb := 0
+    wf := []
+    wr := []
+    bf := []
+    br := []
+    wfile := zero8()
+    bfile := zero8()
+    i := 0
+    while i < 64 {
+        v := p.b[i]
+        if v != 0 {
+            f := board.file_of(i)
+            r := board.rank_of(i)
+            if v > 0 {
+                s = s + piece_val(v) + square_val(v, f, r)
+                phase_mat = phase_mat + phase_w(v)
+                if v == 3 {
+                    wb = wb + 1
+                }
+                if v == 1 {
+                    wf = vec.push(wf, f)
+                    wr = vec.push(wr, r)
+                    wfile[f] = wfile[f] + 1
+                }
+            } else {
+                a := 0 - v
+                s = s - piece_val(a) - square_val(a, f, 7 - r)
+                phase_mat = phase_mat + phase_w(a)
+                if a == 3 {
+                    bb = bb + 1
+                }
+                if a == 1 {
+                    bf = vec.push(bf, f)
+                    br = vec.push(br, r)
+                    bfile[f] = bfile[f] + 1
+                }
+            }
+        }
+        i = i + 1
+    }
+    phase := phase_mat
+    if phase > 24 {
+        phase = 24
+    }
+    s = s + kings(p, phase)
+    if wb >= 2 {
+        s = s + 30
+    }
+    if bb >= 2 {
+        s = s - 30
+    }
+    s = s + pawn_structure(wf, wr, bf, br, wfile, bfile)
+    s = s + rook_files(p, wfile, bfile)
+    s = s + shields(p, phase)
+    if p.side == 1 {
+        s + 8
+    } else {
+        0 - s + 8
+    }
+}
+
+func kings(p: board.Pos, phase: int) -> int {
+    s := 0
+    i := 0
+    while i < 64 {
+        v := p.b[i]
+        if v == 6 {
+            s = s + king_val(board.file_of(i), board.rank_of(i), phase)
+        } else {
+            if v == 0 - 6 {
+                s = s - king_val(board.file_of(i), 7 - board.rank_of(i), phase)
+            }
+        }
+        i = i + 1
+    }
+    s
+}
+
+// White-perspective structure: each side scored with its own pawns as
+// "own" and the enemy's as blockers, ranks mirrored for black.
+
+func pawn_structure(wf: [int], wr: [int], bf: [int], br: [int], wfile: [int], bfile: [int]) -> int {
+    s := 0
+    i := 0
+    while i < len(wf) {
+        s = s + pawn_term(wf[i], wr[i], bf, br, wfile)
+        i = i + 1
+    }
+    i = 0
+    while i < len(bf) {
+        s = s - pawn_term(bf[i], 7 - br[i], wf, mirror_ranks(wr), bfile)
+        i = i + 1
+    }
+    s
+}
+
+func pawn_term(f: int, r: int, ef: [int], er: [int], own_file: [int]) -> int {
+    t := 0
+    passed := true
+    i := 0
+    while i < len(ef) {
+        df := ef[i] - f
+        if df < 0 {
+            df = 0 - df
+        }
+        if df <= 1 && er[i] > r {
+            passed = false
+        }
+        i = i + 1
+    }
+    if passed && r >= 2 && r <= 6 {
+        t = t + 15 + (r - 2) * 8
+    }
+    sup := 0
+    if f > 0 {
+        sup = sup + own_file[f - 1]
+    }
+    if f < 7 {
+        sup = sup + own_file[f + 1]
+    }
+    if sup == 0 {
+        t = t - 12
+    }
+    if own_file[f] > 1 {
+        t = t - 10
+    }
+    t
+}
+
+func mirror_ranks(ranks: [int]) -> [int] {
+    out := []
+    i := 0
+    while i < len(ranks) {
+        out = vec.push(out, 7 - ranks[i])
+        i = i + 1
+    }
+    out
+}
+
+func rook_files(p: board.Pos, wfile: [int], bfile: [int]) -> int {
+    s := 0
+    i := 0
+    while i < 64 {
+        v := p.b[i]
+        if v == 4 || v == 0 - 4 {
+            f := board.file_of(i)
+            bonus := 0
+            if wfile[f] + bfile[f] == 0 {
+                bonus = 12
+            } else {
+                if v == 4 && wfile[f] == 0 {
+                    bonus = 6
+                } else {
+                    if v == 0 - 4 && bfile[f] == 0 {
+                        bonus = 6
+                    }
+                }
+            }
+            if v == 4 {
+                s = s + bonus
+            } else {
+                s = s - bonus
+            }
+        }
+        i = i + 1
+    }
+    s
+}
+
+// Pawn shield: own pawns on the three squares ahead of the king.
+// Weighted by phase (a middlegame concern).
+
+func shields(p: board.Pos, phase: int) -> int {
+    s := shields_side(p, 1) - shields_side(p, 0 - 1)
+    s * phase / 24
+}
+
+func shields_side(p: board.Pos, side: int) -> int {
+    want := 6 * side
+    k := 0 - 1
+    i := 0
+    while i < 64 {
+        if p.b[i] == want {
+            k = i
+        }
+        i = i + 1
+    }
+    if k < 0 {
+        return 0
+    }
+    f := board.file_of(k)
+    r := board.rank_of(k) + side
+    n := 0
+    df := 0 - 1
+    while df <= 1 {
+        nf := f + df
+        if nf >= 0 && nf < 8 && r >= 0 && r < 8 {
+            if p.b[r * 8 + nf] == side {
+                n = n + 1
+            }
+        }
+        df = df + 1
+    }
+    n * 6
+}

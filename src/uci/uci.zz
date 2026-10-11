@@ -1,0 +1,309 @@
+// UCI protocol: `position` / `go` / `bestmove` over stdin, so GUIs,
+// Cutechess, and Lichess bots can drive the engine. The loop is
+// synchronous (one `go` fully searches before the next line reads);
+// `stop` is accepted and ignored. Empty-line counting guards closed
+// stdin (same spin as the `ask` EOF issue upstream).
+
+import std.str
+import std.time
+import std.vec
+
+import chess.engine.ai
+import chess.engine.board
+import chess.engine.fen
+import chess.engine.moves
+import chess.engine.person
+import chess.engine.san
+
+func opt_int(text: str, fallback: int) -> int {
+    match int(text) {
+        .some(n) => n
+        .none => fallback
+    }
+}
+
+func tokslice(toks: [str], from: int, to: int) -> [str] {
+    out := []
+    i := from
+    while i < to && i < len(toks) {
+        out = vec.push(out, toks[i])
+        i = i + 1
+    }
+    out
+}
+
+func join_from(toks: [str], from: int) -> str {
+    str.join(tokslice(toks, from, len(toks)), " ")
+}
+
+func elo_preset(n: int) -> person.Engine {
+    if n < 600 {
+        person.joker()
+    } else {
+        if n < 1000 {
+            person.novice()
+        } else {
+            if n < 1400 {
+                person.club()
+            } else {
+                if n < 1800 {
+                    person.expert()
+                } else {
+                    person.master()
+                }
+            }
+        }
+    }
+}
+
+pub func run() {
+    pos := board.setup()
+    hist := []
+    eng := person.club()
+    go := true
+    empty := 0
+    while go {
+        line := str.trim(input(""))
+        if len(line) == 0 {
+            empty = empty + 1
+            if empty >= 5 {
+                go = false
+            }
+        } else {
+            empty = 0
+            toks := str.split(line, " ")
+            cmd := toks[0]
+            if cmd == "uci" {
+                println("id name ZZ Chess 0.2.0")
+                println("id author Zaid Ajo")
+                println("option name Skill Level type spin default 2 min 0 max 4")
+                println("option name Elo type spin default 1200 min 400 max 2000")
+                println("uciok")
+            } else {
+                if cmd == "isready" {
+                    println("readyok")
+                } else {
+                    if cmd == "setoption" {
+                        eng = apply_option(toks, eng)
+                    } else {
+                        if cmd == "ucinewgame" {
+                            pos = board.setup()
+                            hist = []
+                        } else {
+                            if cmd == "position" {
+                                pos = board.setup()
+                                hist = []
+                                i := 1
+                                if i < len(toks) && toks[i] == "fen" {
+                                    if len(toks) >= 8 {
+                                        f := join_from(toks, 2)
+                                        // FEN is six fields; trailing
+                                        // "moves ..." must not leak in.
+                                        f = first_fields(f, 6)
+                                        match fen.parse(f) {
+                                            .some(q) => {
+                                                pos = q
+                                            }
+                                            .none => {
+                                                pos = board.setup()
+                                            }
+                                        }
+                                    }
+                                    i = 8
+                                } else {
+                                    if i < len(toks) && toks[i] == "startpos" {
+                                        i = i + 1
+                                    }
+                                }
+                                if i < len(toks) && toks[i] == "moves" {
+                                    i = i + 1
+                                    while i < len(toks) {
+                                        m := san.parse_coord(toks[i], moves.gen_legal(pos))
+                                        if m == 0 {
+                                            i = len(toks)
+                                        } else {
+                                            hist = ai.push_hist(hist, pos)
+                                            pos = moves.make(pos, m)
+                                            i = i + 1
+                                        }
+                                    }
+                                }
+                            } else {
+                                if cmd == "go" {
+                                    r := do_go(toks, eng, pos, hist)
+                                    println(r)
+                                } else {
+                                    if cmd == "d" {
+                                        board.show(pos.b)
+                                    } else {
+                                        if cmd == "quit" {
+                                            go = false
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+func first_fields(text: str, n: int) -> str {
+    parts := str.split(text, " ")
+    str.join(tokslice(parts, 0, n), " ")
+}
+
+func apply_option(toks: [str], eng: person.Engine) -> person.Engine {
+    // setoption name <opt...> value <val...>
+    ni := 0 - 1
+    vi := 0 - 1
+    i := 0
+    while i < len(toks) {
+        if toks[i] == "name" {
+            ni = i
+        }
+        if toks[i] == "value" {
+            vi = i
+        }
+        i = i + 1
+    }
+    if ni < 0 || vi < 0 || vi <= ni {
+        return eng
+    }
+    opt := str.join(tokslice(toks, ni + 1, vi), " ")
+    val := join_from(toks, vi + 1)
+    if opt == "Skill Level" {
+        return person.by_index(opt_int(val, 2))
+    }
+    if opt == "Elo" {
+        return elo_preset(opt_int(val, 1200))
+    }
+    eng
+}
+
+func do_go(toks: [str], eng: person.Engine, pos: board.Pos, hist: [int]) -> str {
+    depth := eng.depth
+    movems := eng.movems
+    i := 1
+    wtime := 0 - 1
+    btime := 0 - 1
+    winc := 0
+    binc := 0
+    infinite := false
+    fixed_depth := false
+    while i < len(toks) {
+        t := toks[i]
+        if t == "depth" && i + 1 < len(toks) {
+            depth = opt_int(toks[i + 1], depth)
+            if depth < 1 {
+                depth = 1
+            }
+            fixed_depth = true
+            movems = 60000
+            i = i + 1
+        } else {
+            if t == "movetime" && i + 1 < len(toks) {
+                movems = opt_int(toks[i + 1], movems)
+                depth = 64
+                i = i + 1
+            } else {
+                if t == "infinite" {
+                    infinite = true
+                    depth = 64
+                    movems = 0
+                } else {
+                    if t == "wtime" && i + 1 < len(toks) {
+                        wtime = opt_int(toks[i + 1], wtime)
+                        i = i + 1
+                    } else {
+                        if t == "btime" && i + 1 < len(toks) {
+                            btime = opt_int(toks[i + 1], btime)
+                            i = i + 1
+                        } else {
+                            if t == "winc" && i + 1 < len(toks) {
+                                winc = opt_int(toks[i + 1], winc)
+                                i = i + 1
+                            } else {
+                                if t == "binc" && i + 1 < len(toks) {
+                                    binc = opt_int(toks[i + 1], binc)
+                                    i = i + 1
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    if !fixed_depth && (wtime > 0 || btime > 0) {
+        left := wtime
+        inc := winc
+        if pos.side == 0 - 1 {
+            left = btime
+            inc = binc
+        }
+        if left > 0 {
+            movems = left / 25 + inc / 2
+            if movems < 50 {
+                movems = 50
+            }
+            if movems > left / 2 && left / 2 > 50 {
+                movems = left / 2
+            }
+            depth = 64
+        }
+    }
+    if infinite {
+        // Synchronous engine: cap infinite at the preset depth.
+        depth = eng.depth
+        movems = 0
+    }
+    g := person.Engine{name: "UCI", elo: eng.elo, depth: depth, movems: movems, variety: 0, blunder: 0, joker: false}
+    t0 := time.now_ms()
+    r := person.search_root(g, pos, hist)
+    dt := time.now_ms() - t0
+    if len(r.moves) == 0 {
+        return "bestmove 0000"
+    }
+    m := person.pick_in_window(r.moves, r.scores, 0)
+    s := score_of(r, m)
+    println("info depth " + str(r.depth) + " " + score_line(s) + " time " + str(dt) + " pv " + board.move_name(m))
+    "bestmove " + board.move_name(m)
+}
+
+func score_of(r: person.Root, m: int) -> int {
+    i := 0
+    while i < len(r.moves) {
+        if r.moves[i] == m {
+            return r.scores[i]
+        }
+        i = i + 1
+    }
+    0
+}
+
+pub func score_line(s: int) -> str {
+    a := s
+    if a < 0 {
+        a = 0 - a
+    }
+    if a > 90000 {
+        // Mate distances wobble by a ply between search (depth bonus)
+        // and quiescence (remaining-plies bonus); clamp at one so the
+        // sign — the part that matters — is never wrong.
+        plies := 100000 - a
+        if plies < 1 {
+            plies = 1
+        }
+        n := (plies + 1) / 2
+        if s < 0 {
+            n = 0 - n
+        }
+        "score mate " + str(n)
+    } else {
+        "score cp " + str(s)
+    }
+}

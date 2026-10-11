@@ -1,0 +1,270 @@
+// Rated personalities. One search, many strengths: depth + clock set
+// the ceiling, `variety` (centipawn window around best) and `blunder`
+// (per-mille random-move rate) bring it down to human. Joker plays
+// uniform-random legal chess. Mate scores never enter the variety
+// window — no personality "varieties" away a forced mate.
+
+import std.time
+import std.vec
+
+import ai
+import board
+import moves
+import rand
+
+pub struct Engine {
+    name: str,
+    elo: int,
+    depth: int,
+    movems: int,
+    variety: int,
+    blunder: int,
+    joker: bool,
+}
+
+pub func joker() -> Engine {
+    Engine{name: "Joker", elo: 400, depth: 1, movems: 50, variety: 0, blunder: 1000, joker: true}
+}
+
+pub func novice() -> Engine {
+    Engine{name: "Novice", elo: 800, depth: 1, movems: 200, variety: 150, blunder: 80, joker: false}
+}
+
+pub func club() -> Engine {
+    Engine{name: "Club", elo: 1200, depth: 2, movems: 500, variety: 60, blunder: 25, joker: false}
+}
+
+pub func expert() -> Engine {
+    Engine{name: "Expert", elo: 1600, depth: 3, movems: 1500, variety: 25, blunder: 8, joker: false}
+}
+
+pub func master() -> Engine {
+    Engine{name: "Master", elo: 2000, depth: 4, movems: 3000, variety: 0, blunder: 0, joker: false}
+}
+
+pub func roster() -> [Engine] {
+    [joker(), novice(), club(), expert(), master()]
+}
+
+pub func roster_names() -> [str] {
+    ["Joker (~400, chaos)", "Novice (800)", "Club (1200)", "Expert (1600)", "Master (2000)"]
+}
+
+pub func by_index(i: int) -> Engine {
+    r := roster()
+    if i < 0 || i >= len(r) {
+        club()
+    } else {
+        r[i]
+    }
+}
+
+func uniform(ms: [int]) -> int {
+    (k, _) := rand.below(rand.auto_seed(), len(ms))
+    ms[k]
+}
+
+// Score every root move at depth d (full window, negated).
+
+func score_root(p: board.Pos, ms: [int], d: int) -> [int] {
+    out := []
+    i := 0
+    while i < len(ms) {
+        q := moves.make(p, ms[i])
+        out = vec.push(out, 0 - ai.search(q, d - 1, 0 - 1000000, 1000000))
+        i = i + 1
+    }
+    out
+}
+
+// Reorder moves by their previous-iteration scores, best first
+// (the poor engine's hash move).
+
+func order_by_scores(ms: [int], scores: [int]) -> [int] {
+    out := []
+    used := []
+    n := 0
+    while n < len(ms) {
+        best_i := 0 - 1
+        best_s := 0 - 10000000
+        i := 0
+        while i < len(ms) {
+            if !contains(used, i) && scores[i] > best_s {
+                best_s = scores[i]
+                best_i = i
+            }
+            i = i + 1
+        }
+        if best_i < 0 {
+            n = len(ms)
+        } else {
+            out = vec.push(out, ms[best_i])
+            used = vec.push(used, best_i)
+            n = n + 1
+        }
+    }
+    out
+}
+
+func contains(v: [int], x: int) -> bool {
+    i := 0
+    while i < len(v) {
+        if v[i] == x {
+            return true
+        }
+        i = i + 1
+    }
+    false
+}
+
+pub struct Root {
+    moves: [int],
+    scores: [int],
+    depth: int,
+}
+
+pub func best_move_for(eng: Engine, p: board.Pos, hist: [int]) -> int {
+    all := moves.gen_legal(p)
+    if len(all) == 0 {
+        return 0
+    }
+    if eng.joker {
+        return uniform(all)
+    }
+    (roll, _) := rand.below(rand.auto_seed(), 1000)
+    if roll < eng.blunder {
+        return uniform(all)
+    }
+    r := search_root(eng, p, hist)
+    pick_in_window(r.moves, r.scores, eng.variety)
+}
+
+// One iterative-deepening run: repetition-filtered, ordered, scored.
+// Returns the final root moves + scores + depth actually reached
+// (the clock can stop the climb early; depth 1 always completes).
+
+pub func search_root(eng: Engine, p: board.Pos, hist: [int]) -> Root {
+    all := moves.gen_legal(p)
+    if len(all) == 0 {
+        return Root{moves: [], scores: [], depth: 0}
+    }
+    // Repetition filter first (shuffle loops bore everyone), falling
+    // back to the full list when everything repeats.
+    ms := []
+    i := 0
+    while i < len(all) {
+        q := moves.make(p, all[i])
+        if !ai.seen_before(hist, q.side, q.b) {
+            ms = vec.push(ms, all[i])
+        }
+        i = i + 1
+    }
+    if len(ms) == 0 {
+        ms = all
+    }
+    ms = ai.order_moves(p, ms)
+    scores := score_root(p, ms, 1)
+    if eng.depth <= 1 {
+        return Root{moves: ms, scores: scores, depth: 1}
+    }
+    start := time.now_ms()
+    d := 2
+    reached := 1
+    while d <= eng.depth {
+        if eng.movems > 0 && time.now_ms() - start >= eng.movems {
+            d = eng.depth + 1
+        } else {
+            ms = order_by_scores(ms, scores)
+            scores = score_root(p, ms, d)
+            reached = d
+            d = d + 1
+        }
+    }
+    Root{moves: ms, scores: scores, depth: reached}
+}
+
+// Uniform draw among moves within `window` cp of best. Mating best
+// (score > 90000) short-circuits to the mate itself.
+
+pub func pick_in_window(ms: [int], scores: [int], window: int) -> int {
+    best := 0 - 1000000
+    i := 0
+    while i < len(scores) {
+        if scores[i] > best {
+            best = scores[i]
+        }
+        i = i + 1
+    }
+    if best > 90000 {
+        i = 0
+        while i < len(scores) {
+            if scores[i] == best {
+                return ms[i]
+            }
+            i = i + 1
+        }
+        return ms[0]
+    }
+    cands := []
+    i = 0
+    while i < len(ms) {
+        if scores[i] >= best - window {
+            cands = vec.push(cands, ms[i])
+        }
+        i = i + 1
+    }
+    if len(cands) == 0 {
+        return ms[0]
+    }
+    uniform(cands)
+}
+
+// Shared game result for every frontend: 0 ongoing, 1 white mates,
+// 2 black mates, 3 stalemate, 4 fifty-move, 5 threefold, 6 material.
+
+pub func result(p: board.Pos, hist: [int]) -> int {
+    if p.half >= 100 {
+        return 4
+    }
+    if ai.repetitions(hist, p) >= 3 {
+        return 5
+    }
+    if ai.insufficient_material(p.b) {
+        return 6
+    }
+    ms := moves.gen_legal(p)
+    if len(ms) > 0 {
+        return 0
+    }
+    if moves.in_check(p) {
+        if p.side == 1 {
+            return 2
+        }
+        return 1
+    }
+    3
+}
+
+pub func result_line(st: int) -> str {
+    if st == 1 {
+        "1-0 white mates"
+    } else {
+        if st == 2 {
+            "0-1 black mates"
+        } else {
+            if st == 3 {
+                "1/2-1/2 stalemate"
+            } else {
+                if st == 4 {
+                    "1/2-1/2 fifty-move rule"
+                } else {
+                    if st == 5 {
+                        "1/2-1/2 threefold repetition"
+                    } else {
+                        "1/2-1/2 dead position"
+                    }
+                }
+            }
+        }
+    }
+}
