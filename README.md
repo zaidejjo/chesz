@@ -92,9 +92,18 @@ All under `~/.config/chesz/`:
 
 | File          | What                                              |
 |---------------|---------------------------------------------------|
-| `config.json` | Pieces (`letters`, `glyphs`, `ascii`), theme (, , , ), last folder |
+| `config.json` | Pieces (`letters`, `glyphs`, `ascii`), theme (15 built-ins below), last folder |
 | `stats.json`  | Your ladder + W-L-D vs every engine               |
 | `games/`      | Every played game auto-saved as PGN               |
+
+Boards: lichess, green, slate, blue, catppuccin, latte, tokyo-night,
+dracula, nord, gruvbox, solarized-dark, solarized-light, monokai,
+everforest, rose-pine — via config or CHESS_THEME. Your own live in
+~/.config/chesz/themes/<name>.json:
+
+```json
+{ "dark": "#181825", "light": "#f5e0dc" }
+```
 
 Set pieces once and forget it:
 

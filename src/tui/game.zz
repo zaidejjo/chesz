@@ -42,6 +42,7 @@ pub struct Frame {
     after: int,
     m_ox: int,
     m_oy: int,
+    tpal: [int],
     show_bar: bool,
     bar_cp: int,
     bar_pct: int,
@@ -58,11 +59,11 @@ func fresh_frame(human_side: int) -> Frame {
     if human_side == 0 - 1 {
         cur = 52
     }
-    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
+    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
 }
 
 func replay(played: [int]) -> Frame {
-    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
+    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
     i := 0
     while i < len(played) {
         st.sans = vec.push(st.sans, san.notation(st.pos, played[i]))
@@ -293,7 +294,7 @@ pub func draw_frame(rows: [str], side: [str]) -> [int] {
 }
 
 func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int, style: int, src: str, theme: int) -> Frame {
-    rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode, style, theme)
+    rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode, style, theme, st.tpal)
     if st.show_bar {
         rows = board_view.with_bar(rows, st.bar_pct, mode)
     }
@@ -541,6 +542,7 @@ func with_clock(st: Frame, clock: [int]) -> Frame {
 func start_frame(human_side: int, clock: [int]) -> Frame {
     st := fresh_frame(human_side)
     st = with_clock(st, clock)
+    st.tpal = board_view.load_custom(board_view.resolve_theme())
     st = refresh_bar(st)
     st.evals = [st.bar_cp]
     st.turn_ms = time.now_ms()
@@ -635,6 +637,7 @@ pub func run_loaded(st: Frame, eng: person.Engine, human_side: int, clock: [int]
     }
     st = with_clock(st, clock)
     st.turn_ms = time.now_ms()
+    st.tpal = board_view.load_custom(board_view.resolve_theme())
     code := finish(st, eng, human_side, false, white, black)
     if code != 2 {
         return true
@@ -674,7 +677,7 @@ func review_loop(st: Frame) {
             p = moves.make(p, st.played[k])
             k = k + 1
         }
-        rows := board_view.render(p, 0 - 1, 0 - 1, [], 0 - 1, 0 - 1, mode, style, theme)
+        rows := board_view.render(p, 0 - 1, 0 - 1, [], 0 - 1, 0 - 1, mode, style, theme, st.tpal)
         label := "Start position"
         if idx > 0 {
             label = move_no(idx - 1) + st.sans[idx - 1]
@@ -888,6 +891,7 @@ func undo_n(st: Frame, human_side: int, n: int) -> Frame {
     st2 := replay(slice_moves(st.played, len(st.played) - n))
     st2.cursor = st.cursor
     st2.show_bar = st.show_bar
+    st2.tpal = st.tpal
     // Eval history runs parallel to played (+1 seed): drop the same tail
     // so the report never reads a removed position.
     st2.evals = slice_moves(st.evals, len(st.evals) - n)

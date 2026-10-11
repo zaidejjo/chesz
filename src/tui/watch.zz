@@ -59,7 +59,7 @@ func watch_panel(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mod
 }
 
 func watch_draw(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mode: int, style: int, src: str, theme: int) -> game.Frame {
-    rows := board_view.render(st.pos, 0 - 1, 0 - 1, [], st.last_from, st.last_to, mode, style, theme)
+    rows := board_view.render(st.pos, 0 - 1, 0 - 1, [], st.last_from, st.last_to, mode, style, theme, st.tpal)
     if st.show_bar {
         rows = board_view.with_bar(rows, st.bar_pct, mode)
     }
@@ -85,7 +85,8 @@ pub func run(eng_w: person.Engine, eng_b: person.Engine) -> bool {
     style := board_view.resolve_style()
     src := board_view.style_source()
     theme := board_view.resolve_theme()
-    st := game.Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 0, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
+    st := game.Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 0, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
+    st.tpal = board_view.load_custom(theme)
     st = game.refresh_bar(st)
     quit := false
     while !quit {

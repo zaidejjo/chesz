@@ -200,67 +200,28 @@ func vbar(mode: int) -> str {
     }
 }
 
-func shade(sq: int, text: str, mode: int, theme: int) -> str {
+func shade(sq: int, text: str, mode: int, theme: int, pal: [int]) -> str {
     dark := (board.file_of(sq) + board.rank_of(sq)) % 2 == 0
     if mode >= 3 {
-        dr := 181
-        dg := 136
-        db := 99
-        lr := 240
-        lg := 217
-        lb := 181
-        if theme == 1 {
-            dr = 118
-            dg = 150
-            db = 86
-            lr = 238
-            lg = 238
-            lb = 210
-        } else {
-            if theme == 2 {
-                dr = 105
-                dg = 115
-                db = 130
-                lr = 225
-                lg = 230
-                lb = 238
-            } else {
-                if theme == 3 {
-                    dr = 105
-                    dg = 145
-                    db = 185
-                    lr = 232
-                    lg = 242
-                    lb = 252
-                }
+        if len(pal) == 6 && theme >= 100 {
+            if dark {
+                return colors.bg_rgb(text, pal[0], pal[1], pal[2])
             }
+            return colors.bg_rgb(text, pal[3], pal[4], pal[5])
         }
+        d := theme_dark(theme)
+        l := theme_light(theme)
         if dark {
-            return colors.bg_rgb(text, dr, dg, db)
+            return colors.bg_rgb(text, d[0], d[1], d[2])
         }
-        return colors.bg_rgb(text, lr, lg, lb)
+        return colors.bg_rgb(text, l[0], l[1], l[2])
     }
     if mode == 2 {
-        d := 137
-        l := 223
-        if theme == 1 {
-            d = 107
-            l = 194
-        } else {
-            if theme == 2 {
-                d = 103
-                l = 195
-            } else {
-                if theme == 3 {
-                    d = 110
-                    l = 195
-                }
-            }
-        }
+        c := theme_256(theme)
         if dark {
-            return colors.bg_256(text, d)
+            return colors.bg_256(text, c[0])
         }
-        return colors.bg_256(text, l)
+        return colors.bg_256(text, c[1])
     }
     if mode == 1 {
         f := board.file_of(sq)
@@ -310,7 +271,7 @@ func hi_bg(text: str, kind: int, mode: int) -> str {
     colors.bg_cyan(text)
 }
 
-func mark_bg(sq: int, text: str, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, mode: int, theme: int) -> str {
+func mark_bg(sq: int, text: str, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, mode: int, theme: int, pal: [int]) -> str {
     if mode == 0 {
         if sq == cursor {
             return "[" + text + "]"
@@ -330,7 +291,7 @@ func mark_bg(sq: int, text: str, cursor: int, selected: int, targets: [int], las
                 if sq == last_from || sq == last_to {
                     inner = hi_bg(text, 3, mode)
                 } else {
-                    inner = shade(sq, text, mode, theme)
+                    inner = shade(sq, text, mode, theme, pal)
                 }
             }
         }
@@ -341,7 +302,7 @@ func mark_bg(sq: int, text: str, cursor: int, selected: int, targets: [int], las
     inner
 }
 
-func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, mode: int, piece_line: bool, style: int, theme: int) -> str {
+func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, mode: int, piece_line: bool, style: int, theme: int, pal: [int]) -> str {
     head := "  │"
     if piece_line {
         head = rank_label(r, mode) + vbar(mode)
@@ -380,7 +341,7 @@ func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], 
             }
         }
         cell := piece_fg(v, art, mode, sq)
-        line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, mode, theme)
+        line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, mode, theme, pal)
         f = f + 1
     }
     if mode == 0 {
@@ -394,7 +355,7 @@ func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], 
 // block: pure math on visible widths (ANSI stripped), so highlights
 // never shift columns. ox/oy pad left/top.
 
-pub func render(p: board.Pos, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, mode: int, style: int, theme: int) -> [str] {
+pub func render(p: board.Pos, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, mode: int, style: int, theme: int, pal: [int]) -> [str] {
     check_king := 0 - 1
     if moves.in_check(p) {
         check_king = moves.king_sq(p.b, p.side)
@@ -403,8 +364,8 @@ pub func render(p: board.Pos, cursor: int, selected: int, targets: [int], last_f
     rows = vec.push(rows, frame_top(mode))
     r := 7
     while r >= 0 {
-        rows = vec.push(rows, cell_row(p, r, cursor, selected, targets, last_from, last_to, check_king, mode, false, style, theme))
-        rows = vec.push(rows, cell_row(p, r, cursor, selected, targets, last_from, last_to, check_king, mode, true, style, theme))
+        rows = vec.push(rows, cell_row(p, r, cursor, selected, targets, last_from, last_to, check_king, mode, false, style, theme, pal))
+        rows = vec.push(rows, cell_row(p, r, cursor, selected, targets, last_from, last_to, check_king, mode, true, style, theme, pal))
         r = r - 1
     }
     rows = vec.push(rows, frame_bottom(mode))
@@ -476,28 +437,185 @@ pub func style_in_json(text: str) -> int {
     style_of(json.as_str(v))
 }
 
-// Board theme: lichess brown default; green/slate/blue via
-// CHESS_THEME or the config "theme" key. Styles: 0 lichess, 1 green,
-// 2 slate, 3 blue.
+// Board themes: 15 built-ins (0 lichess default through 14 rose-pine)
+// plus user files in ~/.config/chesz/themes/ (ids 100+). Tables, not
+// pyramids: names, palettes and 256-color pairs all index by id.
+
+func theme_names_all() -> [str] {
+    ["lichess", "green", "slate", "blue", "catppuccin", "latte", "tokyo-night", "dracula", "nord", "gruvbox", "solarized-dark", "solarized-light", "monokai", "everforest", "rose-pine"]
+}
+
+pub func theme_count() -> int {
+    len(theme_names_all())
+}
 
 pub func theme_of(name: str) -> int {
-    if name == "green" {
-        1
+    names := theme_names_all()
+    i := 0
+    while i < len(names) {
+        if names[i] == name {
+            return i
+        }
+        i = i + 1
+    }
+    0 - 1
+}
+
+pub func theme_name(theme: int) -> str {
+    names := theme_names_all()
+    if theme < 0 || theme >= len(names) {
+        if theme >= 100 {
+            customs := custom_names()
+            idx := theme - 100
+            if idx >= 0 && idx < len(customs) {
+                return customs[idx]
+            }
+        }
+        return "lichess"
+    }
+    names[theme]
+}
+
+// User themes: ~/.config/chesz/themes/<name>.json holding
+// {"dark": "#181825", "light": "#f5e0dc"}. Sorted by the OS read,
+// ids 100+ in that order (stable across launches).
+
+func themes_dir() -> str {
+    home_dir() + "/.config/chesz/themes"
+}
+
+func strip_json(name: str) -> str {
+    b := str.bytes(name)
+    if len(b) <= 5 {
+        return ""
+    }
+    out := ""
+    i := 0
+    while i < len(b) - 5 {
+        out = out + str.chr(b[i])
+        i = i + 1
+    }
+    out
+}
+
+pub func custom_names() -> [str] {
+    out := []
+    match fs.read_dir(themes_dir()) {
+        .ok(all) => out = collect_custom(all)
+        .err(_) => out = out
+    }
+    out
+}
+
+func collect_custom(all: [str]) -> [str] {
+    out := []
+    i := 0
+    while i < len(all) {
+        n := all[i]
+        if str.ends_with(n, ".json") && !str.starts_with(n, ".") {
+            out = vec.push(out, strip_json(n))
+        }
+        i = i + 1
+    }
+    out
+}
+
+func hex_val(b: int) -> int {
+    if b >= 48 && b <= 57 {
+        b - 48
     } else {
-        if name == "slate" {
-            2
+        if b >= 97 && b <= 102 {
+            b - 87
         } else {
-            if name == "blue" {
-                3
+            if b >= 65 && b <= 70 {
+                b - 55
             } else {
-                if name == "lichess" {
-                    0
-                } else {
-                    0 - 1
-                }
+                0 - 1
             }
         }
     }
+}
+
+pub func hex_rgb(text: str) -> [int] {
+    b := str.bytes(text)
+    if len(b) != 7 || b[0] != 35 {
+        return []
+    }
+    out := []
+    i := 1
+    while i < 7 {
+        hi := hex_val(b[i])
+        lo := hex_val(b[i + 1])
+        if hi < 0 || lo < 0 {
+            return []
+        }
+        out = vec.push(out, hi * 16 + lo)
+        i = i + 2
+    }
+    out
+}
+
+func str_field(j: json, key: str) -> str {
+    match json.get(j, key) {
+        .ok(v) => {
+            if json.is_string(v) {
+                json.as_str(v)
+            } else {
+                ""
+            }
+        }
+        .err(_) => ""
+    }
+}
+
+pub func load_custom(theme: int) -> [int] {
+    if theme < 100 {
+        return []
+    }
+    customs := custom_names()
+    idx := theme - 100
+    if idx < 0 || idx >= len(customs) {
+        return []
+    }
+    match fs.read_to_string(themes_dir() + "/" + customs[idx] + ".json") {
+        .ok(t) => {
+            j := json.parse_or_null(t)
+            if !json.is_object(j) {
+                return []
+            }
+            d := hex_rgb(str_field(j, "dark"))
+            l := hex_rgb(str_field(j, "light"))
+            if len(d) != 3 || len(l) != 3 {
+                return []
+            }
+            [d[0], d[1], d[2], l[0], l[1], l[2]]
+        }
+        .err(_) => []
+    }
+}
+
+func theme_dark(theme: int) -> [int] {
+    pal := [[181, 136, 99], [118, 150, 86], [105, 115, 130], [105, 145, 185], [108, 112, 134], [172, 178, 194], [86, 95, 137], [98, 114, 164], [76, 86, 106], [102, 92, 84], [88, 110, 117], [147, 161, 161], [117, 113, 94], [125, 131, 119], [110, 106, 134]]
+    if theme < 0 || theme >= len(pal) {
+        return [181, 136, 99]
+    }
+    pal[theme]
+}
+
+func theme_light(theme: int) -> [int] {
+    pal := [[240, 217, 181], [238, 238, 210], [225, 230, 238], [232, 242, 252], [245, 224, 220], [239, 241, 245], [192, 202, 245], [248, 248, 242], [216, 222, 233], [235, 219, 178], [238, 232, 213], [253, 246, 227], [248, 248, 242], [211, 198, 170], [246, 240, 236]]
+    if theme < 0 || theme >= len(pal) {
+        return [240, 217, 181]
+    }
+    pal[theme]
+}
+
+func theme_256(theme: int) -> [int] {
+    pal := [[137, 223], [107, 194], [103, 195], [110, 195], [102, 224], [146, 255], [60, 189], [61, 255], [60, 188], [59, 223], [66, 228], [109, 230], [101, 255], [108, 187], [102, 255]]
+    if theme < 0 || theme >= len(pal) {
+        return [137, 223]
+    }
+    pal[theme]
 }
 
 pub func theme_in_json(text: str) -> int {
@@ -509,12 +627,12 @@ pub func theme_in_json(text: str) -> int {
     if !json.is_string(v) {
         return 0 - 1
     }
-    theme_of(json.as_str(v))
+    theme_id(json.as_str(v))
 }
 
 pub func resolve_theme() -> int {
     if let .some(v) = env.get_var("CHESS_THEME") {
-        t := theme_of(v)
+        t := theme_id(v)
         if t >= 0 {
             return t
         }
@@ -524,6 +642,24 @@ pub func resolve_theme() -> int {
         return t
     }
     0
+}
+
+// Builtin id, or 100+ for a user file, or -1.
+
+func theme_id(name: str) -> int {
+    t := theme_of(name)
+    if t >= 0 {
+        return t
+    }
+    customs := custom_names()
+    i := 0
+    while i < len(customs) {
+        if customs[i] == name {
+            return 100 + i
+        }
+        i = i + 1
+    }
+    0 - 1
 }
 
 func theme_in_json_file(path: str) -> int {
@@ -651,22 +787,6 @@ func style_name(style: int) -> str {
 func esc_json(t: str) -> str {
     s := str.replace(t, "\\", "\\\\")
     str.replace(s, "\"", "\\\"")
-}
-
-func theme_name(theme: int) -> str {
-    if theme == 1 {
-        "green"
-    } else {
-        if theme == 2 {
-            "slate"
-        } else {
-            if theme == 3 {
-                "blue"
-            } else {
-                "lichess"
-            }
-        }
-    }
 }
 
 pub func set_last_dir(dir: str) -> str {

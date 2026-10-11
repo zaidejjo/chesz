@@ -17,8 +17,8 @@ import chesz.tui.pick
 import tui.keys as tkeys
 import tui.screen
 
-func draw_puzzle(p: board.Pos, cursor: int, selected: int, targets: [int], idx: int, tries: int, note: str, mode: int, style: int, theme: int) {
-    rows := board_view.render(p, cursor, selected, targets, 0 - 1, 0 - 1, mode, style, theme)
+func draw_puzzle(p: board.Pos, cursor: int, selected: int, targets: [int], idx: int, tries: int, note: str, mode: int, style: int, theme: int, pal: [int]) {
+    rows := board_view.render(p, cursor, selected, targets, 0 - 1, 0 - 1, mode, style, theme, pal)
     side := []
     side = vec.push(side, "Puzzle " + str(idx + 1) + "/" + str(puzzles.count()))
     side = vec.push(side, puzzles.desc_at(idx))
@@ -48,7 +48,7 @@ func queenish(legal: [int], from: int, to: int) -> int {
     opts[0]
 }
 
-func solve_loop(start: board.Pos, idx: int, mode: int, style: int, theme: int) -> bool {
+func solve_loop(start: board.Pos, idx: int, mode: int, style: int, theme: int, pal: [int]) -> bool {
     p := start
     hist := []
     cursor := 28
@@ -59,7 +59,7 @@ func solve_loop(start: board.Pos, idx: int, mode: int, style: int, theme: int) -
     done := false
     won := false
     while !done {
-        draw_puzzle(p, cursor, selected, targets, idx, tries, note, mode, style, theme)
+        draw_puzzle(p, cursor, selected, targets, idx, tries, note, mode, style, theme, pal)
         k := tkeys.read()
         if k == tkeys.eof() || k == tkeys.ctrl_c() || k == 113 || k == tkeys.esc() {
             done = true
@@ -143,11 +143,12 @@ pub func run() -> bool {
     board_view.ensure_config()
     style := board_view.resolve_style()
     theme := board_view.resolve_theme()
+    pal := board_view.load_custom(theme)
     solved := 0
     i := 0
     while i < puzzles.count() {
         if let .some(p) = fen.parse(puzzles.fen_at(i)) {
-            if solve_loop(p, i, mode, style, theme) {
+            if solve_loop(p, i, mode, style, theme, pal) {
                 solved = solved + 1
             }
         }
