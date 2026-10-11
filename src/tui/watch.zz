@@ -15,9 +15,14 @@ import chess.tui.pick
 import tui.keys as tkeys
 import tui.screen
 
-func watch_panel(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine) -> [str] {
+func watch_panel(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mode: int) -> [str] {
     out := []
     out = vec.push(out, "ZZ Chess 0.2.0 — watch")
+    if mode == 4 {
+        out = vec.push(out, "Gfx: PNG pieces")
+    } else {
+        out = vec.push(out, "Gfx: glyphs")
+    }
     out = vec.push(out, "White: " + eng_w.name + " (" + str(eng_w.elo) + ")")
     out = vec.push(out, "Black: " + eng_b.name + " (" + str(eng_b.elo) + ")")
     res := person.result(st.pos, st.hist)
@@ -38,7 +43,7 @@ func watch_panel(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine) -> 
 
 func watch_draw(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mode: int) {
     rows := board_view.render(st.pos, 0 - 1, 0 - 1, [], st.last_from, st.last_to, mode)
-    side := watch_panel(st, eng_w, eng_b)
+    side := watch_panel(st, eng_w, eng_b, mode)
     game.draw_frame(rows, side, st.pos, mode == 4)
 }
 pub func run(eng_w: person.Engine, eng_b: person.Engine) -> bool {

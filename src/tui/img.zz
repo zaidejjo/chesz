@@ -4,6 +4,7 @@
 // unknown APC codes are ignored, and every entry point no-ops when
 // the probe failed.
 
+import std.env
 import std.str
 import std.term
 import std.time
@@ -11,6 +12,35 @@ import std.time
 import chess.engine.board
 import chess.tui.pieces
 import tui.screen
+
+// Multiplexer passthrough: tmux swallows bare APC, so wrap sequences
+// (inner ESCs doubled) when $TMUX is present. zellij has no wrap
+// protocol — the probe below decides, and glyphs cover it.
+
+func in_tmux() -> bool {
+    match env.get_var("TMUX") {
+        .some(_) => true
+        .none => false
+    }
+}
+
+func esc2(s: str) -> str {
+    str.replace(s, "\e", "\e\e")
+}
+
+func emit(s: str) {
+    if in_tmux() {
+        print("\ePtmux;" + esc2(s) + "\e\\")
+    } else {
+        print(s)
+    }
+}
+
+// Exact bytes of the tmux wrap (unit-testable without a terminal).
+
+pub func wrap_tmux(s: str) -> str {
+    "\ePtmux;" + esc2(s) + "\e\\"
+}
 
 // Piece value -> image id (1-6 white, 11-16 black). 0 for empty.
 
@@ -79,7 +109,8 @@ func chunks_for(v: int) -> [str] {
 // nothing). ~400ms worst case on legacy terms.
 
 pub func supported() -> bool {
-    print("\e_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\e\\" + "\e[c")
+    emit("\e_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\e\\")
+    print("\e[c")
     term.flush()
     reply := read_reply(400)
     str.contains(reply, "Gi=31") && str.contains(reply, "OK")
@@ -131,15 +162,15 @@ func transmit(id: int, chunks: [str]) {
         last := i + 1 >= len(chunks)
         if i == 0 {
             if last {
-                print("\e_Gi={id},f=100,a=t,m=0;{chunks[i]}\e\\")
+                emit("\e_Gi={id},f=100,a=t,m=0;{chunks[i]}\e\\")
             } else {
-                print("\e_Gi={id},f=100,a=t,m=1;{chunks[i]}\e\\")
+                emit("\e_Gi={id},f=100,a=t,m=1;{chunks[i]}\e\\")
             }
         } else {
             if last {
-                print("\e_Gm=0;{chunks[i]}\e\\")
+                emit("\e_Gm=0;{chunks[i]}\e\\")
             } else {
-                print("\e_Gm=1;{chunks[i]}\e\\")
+                emit("\e_Gm=1;{chunks[i]}\e\\")
             }
         }
         i = i + 1
@@ -149,7 +180,7 @@ func transmit(id: int, chunks: [str]) {
 // Delete every visible placement (redraws place fresh).
 
 pub func clear() {
-    print("\e_Ga=d\e\\")
+    emit("\e_Ga=d\e\\")
     term.flush()
 }
 
@@ -158,7 +189,7 @@ pub func clear() {
 
 func place(id: int, x: int, y: int) {
     screen.goto(x, y)
-    print("\e_Ga=p,i={id},c=7,r=2,C=1\e\\")
+    emit("\e_Ga=p,i={id},c=7,r=2,C=1\e\\")
 }
 
 pub func show_board(p: board.Pos, ox: int, oy: int) {

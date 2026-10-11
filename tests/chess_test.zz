@@ -12,6 +12,7 @@ import chess.engine.person
 import chess.engine.san
 import chess.main
 import chess.tui.board_view
+import chess.tui.img
 import chess.tui.pick
 import tui.keys as tkeys
 import chess.uci.uci
@@ -465,6 +466,14 @@ func view_image_mode_blank() {
         }
         .none => panic("startpos rejected")
     }
+}
+
+@test
+func img_tmux_wrap_exact() {
+    assert_eq(img.wrap_tmux("a"), "\ePtmux;a\e\\")
+    assert_eq(img.id_for(5), 5)
+    assert_eq(img.id_for(0 - 5), 15)
+    assert_eq(img.id_for(0), 0)
 }
 
 @test

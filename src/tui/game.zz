@@ -66,10 +66,23 @@ func side_name(side: int) -> str {
     }
 }
 
-func panel(st: Frame, eng: person.Engine, human_side: int, extra: str) -> [str] {
+func gfx_line(mode: int) -> str {
+    if mode == 4 {
+        "Gfx: PNG pieces"
+    } else {
+        if mode == 0 {
+            "Gfx: letters"
+        } else {
+            "Gfx: glyphs"
+        }
+    }
+}
+
+func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int) -> [str] {
     out := []
     out = vec.push(out, "ZZ Chess 0.2.0")
     out = vec.push(out, eng.name + " (" + str(eng.elo) + ")")
+    out = vec.push(out, gfx_line(mode))
     res := person.result(st.pos, st.hist)
     if res != 0 {
         out = vec.push(out, "")
@@ -145,7 +158,7 @@ pub func draw_frame(rows: [str], side: [str], pos: board.Pos, show_img: bool) {
 }
 func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int) {
     rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode)
-    side := panel(st, eng, human_side, extra)
+    side := panel(st, eng, human_side, extra, mode)
     draw_frame(rows, side, st.pos, mode == 4)
 }
 
