@@ -76,14 +76,14 @@ printf 'uci\nisready\nposition startpos\ngo depth 6\nquit\n' | /tmp/chess uci
 
 ## Board UI
 
-`src/tui/` is a retained frontend on the same engine: shaded board,
-cursor (arrows/hjkl), select with Enter (targets light up), promotion
+`src/tui/` is a retained frontend on the same engine: centered
+lichess-brown board (truecolor, 256-color, and basic16 tiers with a
+plain-ASCII fallback), real Unicode pieces (♔♕♖♗♘♙ vs ♚♛♜♝♞♟), cursor
+(arrows/hjkl), select with Enter (targets light up), promotion
 picker, coach hint (`?`), undo (`u`), resign (`q`), check flashes via
-`toast`, dialogs via `toast.win`, screen ownership via `tui.screen`.
-Needs a TTY; otherwise it returns `false` and `main` falls back to the
-text flow. (`tui.menu`/`dialog`/`keys` stay out: `ask` ships its own
-`keys.zz` under the same namespace and the two collide — zaidejjo/zz#380.
-The ~40-line local decoder follows the `tui` numbering.)
+`toast`, dialogs via `toast.win`, screen ownership via `tui.screen`,
+key decoding via `tui.keys` (aliased: full `ask` entry collides —
+zaidejjo/zz#380).
 
 ## Personalities
 
