@@ -4,6 +4,7 @@
 // colorless terminals (or when screen.mode() == 0).
 
 import std.colors
+import std.env
 import std.vec
 
 import chess.engine.board
@@ -280,11 +281,32 @@ func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], 
     while f < 8 {
         sq := r * 8 + f
         v := p.b[sq]
-        glyph := " "
-        if piece_line && mode != 4 {
-            glyph = glyph_for(p.b[sq], mode)
+        art := "       "
+        if mode != 4 {
+            st := art_style()
+            if mode == 0 || st == 2 {
+                if piece_line {
+                    g := " "
+                    if v != 0 {
+                        g = board.glyph(v)
+                    }
+                    art = "   " + g + "   "
+                }
+            } else {
+                if st == 1 {
+                    if piece_line {
+                        art = "   " + glyph_for(v, mode) + "   "
+                    }
+                } else {
+                    sub := 0
+                    if piece_line {
+                        sub = 1
+                    }
+                    art = ascii_art(v, sub)
+                }
+            }
         }
-        cell := piece_fg(v, "   " + glyph + "   ", mode)
+        cell := piece_fg(v, art, mode)
         line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, mode)
         f = f + 1
     }
@@ -343,6 +365,86 @@ func frame_bottom(mode: int) -> str {
         "  +" + rep_str("-", 56) + "+"
     } else {
         colors.dim("  └" + rep_str("─", 56) + "┘")
+    }
+}
+
+// Piece style: ascii character art by default (byte-clean, works
+// everywhere); glyphs or letters via CHESS_PIECES=glyphs|letters.
+
+func art_style() -> int {
+    match env.get_var("CHESS_PIECES") {
+        .some(v) => {
+            if v == "glyphs" {
+                1
+            } else {
+                if v == "letters" {
+                    2
+                } else {
+                    0
+                }
+            }
+        }
+        .none => 0
+    }
+}
+
+// 7x4 character art, shared silhouette both sides (ink reads side).
+// Every row is exactly 7 cells; bases rhyme like a real set.
+
+pub func ascii_art(v: int, sub: int) -> str {
+    if v == 0 {
+        return "       "
+    }
+    a := v
+    if a < 0 {
+        a = 0 - a
+    }
+    top := ascii_top(a)
+    bot := ascii_bot(a)
+    if sub == 0 {
+        top
+    } else {
+        bot
+    }
+}
+
+func ascii_top(a: int) -> str {
+    if a == 1 {
+        "  (_)  "
+    } else {
+        if a == 2 {
+            "  .--  "
+        } else {
+            if a == 3 {
+                "   o   "
+            } else {
+                if a == 4 {
+                    "|_|_|_|"
+                } else {
+                    if a == 5 {
+                        " o o o "
+                    } else {
+                        "   +   "
+                    }
+                }
+            }
+        }
+    }
+}
+
+func ascii_bot(a: int) -> str {
+    if a == 1 {
+        " _|_|_ "
+    } else {
+        if a == 2 {
+            " |__/, "
+        } else {
+            if a == 3 {
+                "  _+_  "
+            } else {
+                " _|_|_ "
+            }
+        }
     }
 }
 
