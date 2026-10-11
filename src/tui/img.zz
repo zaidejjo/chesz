@@ -216,7 +216,7 @@ pub func clear() {
 
 func place(id: int, x: int, y: int) {
     screen.goto(x, y)
-    emit("\e_Ga=p,i={id},c=7,r=2,C=1,q=2\e\\")
+    emit("\e_Ga=p,i={id},c=7,r=2,q=2\e\\")
 }
 
 // iTerm2 inline images (WezTerm, iTerm2, VSCode, Warp, Tabby):
