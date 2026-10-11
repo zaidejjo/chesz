@@ -91,14 +91,14 @@ All under `~/.config/chesz/`:
 
 | File          | What                                              |
 |---------------|---------------------------------------------------|
-| `config.json` | Pieces (`letters`, `glyphs`, `ascii`), last folder |
+| `config.json` | Pieces (`letters`, `glyphs`, `ascii`), theme (, , , ), last folder |
 | `stats.json`  | Your ladder + W-L-D vs every engine               |
 | `games/`      | Every played game auto-saved as PGN               |
 
 Set pieces once and forget it:
 
 ```json
-{ "pieces": "letters" }
+{ "pieces": "letters", "theme": "green" }
 ```
 
 ## UCI

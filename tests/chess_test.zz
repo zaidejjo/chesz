@@ -383,7 +383,7 @@ func loud_matches_pseudo() {
 func view_renders_big_plain_board() {
     match fen.parse(fen.startpos()) {
         .some(p) => {
-            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 0, 2)
+            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 0, 2, 0)
             // Border + 16 cell rows + border + footer.
             assert_eq(len(rows), 19)
             i := 0
@@ -403,7 +403,7 @@ func view_renders_big_plain_board() {
 func view_compose_centers() {
     match fen.parse(fen.startpos()) {
         .some(p) => {
-            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 0, 2)
+            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 0, 2, 0)
             frame := board_view.compose(rows, ["hi"], 4, 2)
             assert_eq(len(frame), 21)
             assert_eq(str.starts_with(frame[2], "    "), true)
@@ -469,7 +469,7 @@ func view_ascii_pieces() {
             assert_eq(board_view.ascii_art(4, 0), "|_|_|_|")
             assert_eq(board_view.ascii_art(0 - 6, 1), " _|_|_ ")
             assert_eq(board_view.ascii_art(0, 0), "       ")
-            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 3, 0)
+            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 3, 0, 0)
             assert_eq(len(rows), 19)
             assert_eq(str.contains(rows[1], "|_|_|_|"), true)
             assert_eq(str.contains(rows[13], "(_)"), true)
@@ -553,7 +553,7 @@ func eval_bar_math() {
     // Bar keeps 19 rows and fills white from the bottom.
     match fen.parse(fen.startpos()) {
         .some(p) => {
-            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 0, 2)
+            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 0, 2, 0)
             b := board_view.with_bar(rows, 62, 0)
             assert_eq(len(b), 19)
             assert_eq(str.starts_with(b[1], "."), true)
@@ -829,6 +829,27 @@ func adaptive_joins_roster() {
     assert_eq(len(person.roster_names()), 6)
     assert_eq(person.by_index(5).name, "Adaptive")
     assert_eq(person.by_index(99).name, "Club")
+}
+
+@test
+func board_themes() {
+    assert_eq(board_view.theme_of("lichess"), 0)
+    assert_eq(board_view.theme_of("green"), 1)
+    assert_eq(board_view.theme_of("slate"), 2)
+    assert_eq(board_view.theme_of("blue"), 3)
+    assert_eq(board_view.theme_of("nope"), 0 - 1)
+    assert_eq(board_view.theme_in_json("{\"theme\": \"green\"}"), 1)
+    assert_eq(board_view.theme_in_json("{\"theme\": \"chaos\"}"), 0 - 1)
+    assert_eq(board_view.theme_in_json("{\"nope\": 1}"), 0 - 1)
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            a := board_view.render(p, 0 - 1, 0 - 1, [], 0 - 1, 0 - 1, 3, 2, 0)
+            b := board_view.render(p, 0 - 1, 0 - 1, [], 0 - 1, 0 - 1, 3, 2, 1)
+            assert_eq(len(a), len(b))
+            assert_eq(a[1] == b[1], false)
+        }
+        .none => panic("startpos rejected")
+    }
 }
 
 @test

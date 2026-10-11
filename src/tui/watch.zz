@@ -57,8 +57,8 @@ func watch_panel(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mod
     out
 }
 
-func watch_draw(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mode: int, style: int, src: str) {
-    rows := board_view.render(st.pos, 0 - 1, 0 - 1, [], st.last_from, st.last_to, mode, style)
+func watch_draw(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mode: int, style: int, src: str, theme: int) {
+    rows := board_view.render(st.pos, 0 - 1, 0 - 1, [], st.last_from, st.last_to, mode, style, theme)
     if st.show_bar {
         rows = board_view.with_bar(rows, st.bar_pct, mode)
     }
@@ -79,17 +79,18 @@ pub func run(eng_w: person.Engine, eng_b: person.Engine) -> bool {
     board_view.ensure_config()
     style := board_view.resolve_style()
     src := board_view.style_source()
+    theme := board_view.resolve_theme()
     st := game.Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 0, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
     st = game.refresh_bar(st)
     quit := false
     while !quit {
         res := person.result(st.pos, st.hist)
         if res != 0 {
-            watch_draw(st, eng_w, eng_b, mode, style, src)
+            watch_draw(st, eng_w, eng_b, mode, style, src, theme)
             pick.pick(person.result_line(res), ["OK"])
             quit = true
         } else {
-            watch_draw(st, eng_w, eng_b, mode, style, src)
+            watch_draw(st, eng_w, eng_b, mode, style, src, theme)
             if let .ok(v) = term.poll(400) {
                 if v {
                     k := tkeys.read()

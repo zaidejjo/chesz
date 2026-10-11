@@ -288,8 +288,8 @@ pub func draw_frame(rows: [str], side: [str]) {
     screen.flush()
 }
 
-func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int, style: int, src: str) {
-    rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode, style)
+func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int, style: int, src: str, theme: int) {
+    rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode, style, theme)
     if st.show_bar {
         rows = board_view.with_bar(rows, st.bar_pct, mode)
     }
@@ -470,7 +470,7 @@ func key_dy(k: int) -> int {
 // (duo=true, both sides human). Returns the final frame; cursor
 // -1000 means quit-to-menu mid-game.
 
-func game_loop(st: Frame, eng: person.Engine, human_side: int, duo: bool, mode: int, style: int, src: str) -> Frame {
+func game_loop(st: Frame, eng: person.Engine, human_side: int, duo: bool, mode: int, style: int, src: str, theme: int) -> Frame {
     quit := false
     while !quit {
         hs := human_side
@@ -484,7 +484,7 @@ func game_loop(st: Frame, eng: person.Engine, human_side: int, duo: bool, mode: 
             if fl == 0 {
                 line = person.result_line(res)
             }
-            draw(st, eng, hs, line, mode, style, src)
+            draw(st, eng, hs, line, mode, style, src, theme)
             c := pick.pick(line, ["Review", "Rematch", "Done"])
             if c == 0 {
                 st.after = 1
@@ -498,12 +498,12 @@ func game_loop(st: Frame, eng: person.Engine, human_side: int, duo: bool, mode: 
             quit = true
         } else {
             if duo || st.pos.side == human_side {
-                st = human_frame(st, eng, hs, mode, style, src, duo)
+                st = human_frame(st, eng, hs, mode, style, src, duo, theme)
                 if st.cursor == 0 - 1000 {
                     quit = true
                 }
             } else {
-                draw(st, eng, hs, "thinking… (" + eng.name + " d" + str(eng.depth) + " " + str(eng.movems) + "ms)", mode, style, src)
+                draw(st, eng, hs, "thinking… (" + eng.name + " d" + str(eng.depth) + " " + str(eng.movems) + "ms)", mode, style, src, theme)
                 m := book.probe(st.pos)
                 dt := 0 - 1
                 if m == 0 {
@@ -555,7 +555,8 @@ func finish(st: Frame, eng: person.Engine, human_side: int, duo: bool, white: st
     board_view.ensure_config()
     style := board_view.resolve_style()
     src := board_view.style_source()
-    st = game_loop(st, eng, human_side, duo, mode, style, src)
+    theme := board_view.resolve_theme()
+    st = game_loop(st, eng, human_side, duo, mode, style, src, theme)
     if st.after == 1 {
         review_loop(st)
         c := pick.pick("Reviewed", ["Rematch", "Done"])
@@ -654,6 +655,7 @@ pub func run_loaded(st: Frame, eng: person.Engine, human_side: int, clock: [int]
 func review_loop(st: Frame) {
     mode := screen.mode()
     style := board_view.resolve_style()
+    theme := board_view.resolve_theme()
     idx := len(st.played)
     quit := false
     while !quit {
@@ -663,7 +665,7 @@ func review_loop(st: Frame) {
             p = moves.make(p, st.played[k])
             k = k + 1
         }
-        rows := board_view.render(p, 0 - 1, 0 - 1, [], 0 - 1, 0 - 1, mode, style)
+        rows := board_view.render(p, 0 - 1, 0 - 1, [], 0 - 1, 0 - 1, mode, style, theme)
         label := "Start position"
         if idx > 0 {
             label = move_no(idx - 1) + st.sans[idx - 1]
@@ -747,7 +749,7 @@ pub func threat_line(p: board.Pos, human_side: int) -> str {
 // One human turn: cursor loop until a move is made. Returns the frame;
 // cursor -1000 signals quit-to-menu (checked by run()).
 
-func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, style: int, src: str, duo: bool) -> Frame {
+func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, style: int, src: str, duo: bool, theme: int) -> Frame {
     th := threat_line(st.pos, human_side)
     if len(th) > 0 {
         if len(st.hint) > 0 {
@@ -758,7 +760,7 @@ func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, styl
     }
     done := false
     while !done {
-        draw(st, eng, human_side, "", mode, style, src)
+        draw(st, eng, human_side, "", mode, style, src, theme)
         k := tkeys.read()
         if k == tkeys.eof() || k == tkeys.ctrl_c() {
             st.cursor = 0 - 1000
