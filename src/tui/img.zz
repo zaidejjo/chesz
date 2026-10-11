@@ -1,0 +1,176 @@
+// Kitty-graphics pieces: real PNGs when the terminal answers the
+// support probe, nothing otherwise. Transmit-once (ids 1-16), place
+// per frame, delete-all on redraw/exit. Byte-safe on legacy terms:
+// unknown APC codes are ignored, and every entry point no-ops when
+// the probe failed.
+
+import std.str
+import std.term
+import std.time
+
+import chess.engine.board
+import chess.tui.pieces
+import tui.screen
+
+// Piece value -> image id (1-6 white, 11-16 black). 0 for empty.
+
+pub func id_for(v: int) -> int {
+    if v > 0 {
+        v
+    } else {
+        if v < 0 {
+            10 - v
+        } else {
+            0
+        }
+    }
+}
+
+func chunks_for(v: int) -> [str] {
+    if v == 1 {
+        pieces.png_wP()
+    } else {
+        if v == 2 {
+            pieces.png_wN()
+        } else {
+            if v == 3 {
+                pieces.png_wB()
+            } else {
+                if v == 4 {
+                    pieces.png_wR()
+                } else {
+                    if v == 5 {
+                        pieces.png_wQ()
+                    } else {
+                        if v == 6 {
+                            pieces.png_wK()
+                        } else {
+                            if v == 0 - 1 {
+                                pieces.png_bP()
+                            } else {
+                                if v == 0 - 2 {
+                                    pieces.png_bN()
+                                } else {
+                                    if v == 0 - 3 {
+                                        pieces.png_bB()
+                                    } else {
+                                        if v == 0 - 4 {
+                                            pieces.png_bR()
+                                        } else {
+                                            if v == 0 - 5 {
+                                                pieces.png_bQ()
+                                            } else {
+                                                pieces.png_bK()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Support probe: 1x1 query + device-attributes request. A graphics
+// terminal answers the query; anything else answers only DA (or
+// nothing). ~400ms worst case on legacy terms.
+
+pub func supported() -> bool {
+    print("\e_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\e\\" + "\e[c")
+    term.flush()
+    reply := read_reply(400)
+    str.contains(reply, "Gi=31") && str.contains(reply, "OK")
+}
+
+func read_reply(budget_ms: int) -> str {
+    out := ""
+    start := time.now_ms()
+    n := 0
+    while n < 48 && time.now_ms() - start < budget_ms {
+        match term.poll(50) {
+            .ok(v) => {
+                if v {
+                    match term.read_key() {
+                        .ok(k) => {
+                            out = out + chr(k)
+                            n = n + 1
+                        }
+                        .err(_) => {
+                            n = 48
+                        }
+                    }
+                }
+            }
+            .err(_) => {
+                n = 48
+            }
+        }
+    }
+    out
+}
+
+// Transmit all 12 images once (ids via id_for). Chunked base64,
+// m=1 continuation, m=0 last.
+
+pub func transmit_all() {
+    vs := [1, 2, 3, 4, 5, 6, 0 - 1, 0 - 2, 0 - 3, 0 - 4, 0 - 5, 0 - 6]
+    i := 0
+    while i < len(vs) {
+        transmit(id_for(vs[i]), chunks_for(vs[i]))
+        i = i + 1
+    }
+    term.flush()
+}
+
+func transmit(id: int, chunks: [str]) {
+    i := 0
+    while i < len(chunks) {
+        last := i + 1 >= len(chunks)
+        if i == 0 {
+            if last {
+                print("\e_Gi={id},f=100,a=t,m=0;{chunks[i]}\e\\")
+            } else {
+                print("\e_Gi={id},f=100,a=t,m=1;{chunks[i]}\e\\")
+            }
+        } else {
+            if last {
+                print("\e_Gm=0;{chunks[i]}\e\\")
+            } else {
+                print("\e_Gm=1;{chunks[i]}\e\\")
+            }
+        }
+        i = i + 1
+    }
+}
+
+// Delete every visible placement (redraws place fresh).
+
+pub func clear() {
+    print("\e_Ga=d\e\\")
+    term.flush()
+}
+
+// Place one image over a 7x2-cell square (PNGs are pre-squashed to
+// that aspect, so c=7,r=2 is distortion-free).
+
+func place(id: int, x: int, y: int) {
+    screen.goto(x, y)
+    print("\e_Ga=p,i={id},c=7,r=2,C=1\e\\")
+}
+
+pub func show_board(p: board.Pos, ox: int, oy: int) {
+    sq := 0
+    while sq < 64 {
+        v := p.b[sq]
+        if v != 0 {
+            f := board.file_of(sq)
+            r := board.rank_of(sq)
+            place(id_for(v), ox + 3 + f * 7, oy + 1 + (7 - r) * 2)
+        }
+        sq = sq + 1
+    }
+    term.flush()
+}

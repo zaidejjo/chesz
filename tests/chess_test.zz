@@ -455,6 +455,19 @@ func view_promo_variants() {
 }
 
 @test
+func view_image_mode_blank() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 4)
+            assert_eq(len(rows), 19)
+            assert_eq(str.contains(rows[2], "♜"), false)
+            assert_eq(str.contains(rows[2], "█"), false)
+        }
+        .none => panic("startpos rejected")
+    }
+}
+
+@test
 func view_glyph_pieces() {
     match fen.parse(fen.startpos()) {
         .some(p) => {

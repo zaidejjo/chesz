@@ -15,6 +15,7 @@ import chess.engine.moves
 import chess.engine.person
 import chess.engine.san
 import chess.tui.board_view
+import chess.tui.img
 import chess.tui.pick
 import toast.toast
 import tui.keys as tkeys
@@ -95,7 +96,7 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str) -> [str] 
     out
 }
 
-pub func draw_frame(rows: [str], side: [str]) {
+pub func draw_frame(rows: [str], side: [str], pos: board.Pos, show_img: bool) {
     cols := 80
     rows_n := 24
     sz := screen.size()
@@ -103,10 +104,10 @@ pub func draw_frame(rows: [str], side: [str]) {
         cols = sz[0]
         rows_n = sz[1]
     }
+    ox := 0
+    oy := 0
     frame := []
     if cols >= 94 {
-        ox := 0
-        oy := 0
         if cols > 92 {
             ox = (cols - 92) / 2
         }
@@ -126,11 +127,9 @@ pub func draw_frame(rows: [str], side: [str]) {
             below = vec.push(below, side[i])
             i = i + 1
         }
-        ox := 0
         if cols > 60 {
             ox = (cols - 60) / 2
         }
-        oy := 0
         if rows_n > len(below) {
             oy = (rows_n - len(below)) / 2
         }
@@ -139,12 +138,15 @@ pub func draw_frame(rows: [str], side: [str]) {
     screen.clear()
     screen.write(str.join(frame, "\r\n"))
     screen.flush()
+    if show_img {
+        img.clear()
+        img.show_board(pos, ox, oy)
+    }
 }
-
 func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int) {
     rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode)
     side := panel(st, eng, human_side, extra)
-    draw_frame(rows, side)
+    draw_frame(rows, side, st.pos, mode == 4)
 }
 
 pub func do_move(st: Frame, m: int) -> Frame {
@@ -235,6 +237,11 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
     defer screen.exit()
     screen.hide()
     mode := screen.mode()
+    imgs := img.supported()
+    if imgs {
+        img.transmit_all()
+        mode = 4
+    }
     st := fresh_frame(human_side)
     quit := false
     while !quit {
@@ -258,6 +265,9 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
                 st = do_move(st, m)
             }
         }
+    }
+    if imgs {
+        img.clear()
     }
     true
 }

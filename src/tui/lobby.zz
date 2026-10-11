@@ -20,6 +20,16 @@ func raw_off() {
     }
 }
 
+// Raw mode is global, not refcounted: game/watch disable it on exit,
+// so re-arm every lobby turn or arrows echo as garbage mid-menu.
+
+func raw_on() {
+    match term.enable_raw() {
+        .ok(_) => term.flush()
+        .err(_) => term.flush()
+    }
+}
+
 func engine_palette() -> person.Engine {
     opts := person.roster_names()
     c := pick.pick("Engine", opts)
@@ -48,13 +58,11 @@ pub func run() -> bool {
     if !screen.is_tty() {
         return false
     }
-    match term.enable_raw() {
-        .ok(_) => term.flush()
-        .err(_) => term.flush()
-    }
+    raw_on()
     defer raw_off()
     again := true
     while again {
+        raw_on()
         c := pick.pick("ZZ Chess 0.2.0", ["Play vs engine", "Watch engine vs engine", "Quit"])
         if c == 0 {
             side := color_palette()

@@ -74,7 +74,15 @@ d_zz build -o /tmp/chess src/main.zz
 printf 'uci\nisready\nposition startpos\ngo depth 6\nquit\n' | /tmp/chess uci
 ```
 
-## Board UI
+## Pieces: glyphs, PNGs, letters
+
+Three tiers, auto-selected. **PNG** (kitty-graphics: 12 embedded
+cburnett pieces by Colin M.L. Burnett, pre-squashed to the 7×2 cell
+aspect, transmit-once, placed per frame) when the support probe
+answers; **glyphs** (♔♕♖♗♘♙ vs ♚♛♜♝♞♟) otherwise; **letters** with no
+color. Raw mode is global, not refcounted: lobby re-arms it every turn
+because game/watch restore cooked on exit — otherwise arrows echo as
+garbage mid-menu.
 
 `src/tui/` is a retained frontend on the same engine. Launching with
 no args opens floating palettes (play/watch/quit → color → engine),
@@ -88,7 +96,8 @@ picker, coach hint (`?`), undo (`u`), resign (`q`). Checks pop
 top-right via `toast.top`; game-over and side panels never show stale
 to-move lines. Screen ownership via `tui.screen`, key decoding via
 `alias tui.keys` (full `ask` entry collides — zaidejjo/zz#380). Watch
-mode spectates engine vs engine with a quit poll between moves.
+mode spectates engine vs engine with a quit poll between moves — pick
+a different rating per side (white Master, black Joker, anything).
 
 All option picking (lobby, promotion, resign, game-over) goes through
 `src/tui/pick.zz`: centered `win.box_at` drawing plus a decoded loop

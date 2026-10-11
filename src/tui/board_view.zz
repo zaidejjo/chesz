@@ -281,7 +281,7 @@ func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], 
         sq := r * 8 + f
         v := p.b[sq]
         glyph := " "
-        if piece_line {
+        if piece_line && mode != 4 {
             glyph = glyph_for(p.b[sq], mode)
         }
         cell := piece_fg(v, "   " + glyph + "   ", mode)
