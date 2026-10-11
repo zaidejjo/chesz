@@ -12,7 +12,7 @@ import chesz.engine.moves
 import chesz.engine.person
 import chesz.engine.pgn
 import chesz.engine.san
-import chesz.main
+import chesz.main as app
 import chesz.tui.board_view
 import chesz.tui.browse
 import chesz.tui.game
@@ -324,12 +324,12 @@ func uci_score_lines() {
 
 @test
 func elo_table_anchors() {
-    assert_eq(main.elo_of_pm(500), 0)
-    assert_eq(main.elo_of_pm(1000), 800)
-    assert_eq(main.elo_of_pm(0), 0 - 800)
-    e := main.elo_of_pm(750)
+    assert_eq(app.elo_of_pm(500), 0)
+    assert_eq(app.elo_of_pm(1000), 800)
+    assert_eq(app.elo_of_pm(0), 0 - 800)
+    e := app.elo_of_pm(750)
     assert_eq(e > 150 && e < 250, true)
-    assert_eq(main.elo_of_pm(250), 0 - main.elo_of_pm(750))
+    assert_eq(app.elo_of_pm(250), 0 - app.elo_of_pm(750))
 }
 
 func has_move(ms: [int], m: int) -> bool {
