@@ -38,6 +38,7 @@ pub struct Frame {
     last_to: int,
     hint: str,
     hlast: int,
+    after: int,
     show_bar: bool,
     bar_cp: int,
     bar_pct: int,
@@ -54,11 +55,11 @@ func fresh_frame(human_side: int) -> Frame {
     if human_side == 0 - 1 {
         cur = 52
     }
-    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
+    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
 }
 
 func replay(played: [int]) -> Frame {
-    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
+    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
     i := 0
     while i < len(played) {
         st.sans = vec.push(st.sans, san.notation(st.pos, played[i]))
@@ -480,7 +481,12 @@ func game_loop(st: Frame, eng: person.Engine, human_side: int, duo: bool, mode: 
                 line = person.result_line(res)
             }
             draw(st, eng, hs, line, mode, style, src)
-            pick.pick(line, ["OK"])
+            c := pick.pick(line, ["Review", "Done"])
+            if c == 0 {
+                st.after = 1
+            } else {
+                st.after = 0
+            }
             quit = true
         } else {
             if duo || st.pos.side == human_side {
@@ -542,6 +548,9 @@ func finish(st: Frame, eng: person.Engine, human_side: int, duo: bool, white: st
     style := board_view.resolve_style()
     src := board_view.style_source()
     st = game_loop(st, eng, human_side, duo, mode, style, src)
+    if st.after == 1 {
+        review_loop(st)
+    }
     screen.exit()
     opp := ""
     if !duo {
@@ -582,6 +591,47 @@ pub func run_loaded(st: Frame, eng: person.Engine, human_side: int, clock: [int]
     st = with_clock(st, clock)
     st.turn_ms = time.now_ms()
     finish(st, eng, human_side, false, white, black)
+}
+
+// Post-game review: step through the played moves on the big board.
+// Pure reconstruction (make-only, no search), so scrubbing is instant.
+
+func review_loop(st: Frame) {
+    mode := screen.mode()
+    style := board_view.resolve_style()
+    idx := len(st.played)
+    quit := false
+    while !quit {
+        p := board.setup()
+        k := 0
+        while k < idx {
+            p = moves.make(p, st.played[k])
+            k = k + 1
+        }
+        rows := board_view.render(p, 0 - 1, 0 - 1, [], 0 - 1, 0 - 1, mode, style)
+        label := "Start position"
+        if idx > 0 {
+            label = move_no(idx - 1) + st.sans[idx - 1]
+        }
+        side := [label + "  (" + str(idx) + "/" + str(len(st.played)) + ")", "", "left/right step · q done"]
+        draw_frame(rows, side)
+        t := tkeys.read()
+        if t == tkeys.eof() || t == tkeys.ctrl_c() || t == tkeys.esc() || t == 113 {
+            quit = true
+        } else {
+            if t == tkeys.left() || t == 104 {
+                if idx > 0 {
+                    idx = idx - 1
+                }
+            } else {
+                if t == tkeys.right() || t == 108 {
+                    if idx < len(st.played) {
+                        idx = idx + 1
+                    }
+                }
+            }
+        }
+    }
 }
 
 // One human turn: cursor loop until a move is made. Returns the frame;

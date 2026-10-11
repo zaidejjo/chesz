@@ -114,7 +114,8 @@ half-block pairs — same silhouette both sides, ink color reads the
 side), cursor
 (arrows/hjkl), select with Enter (targets light up), promotion
 picker, coach hint (`?`), undo (`u`, one ply in hotseat, two vs the
-engine), resign (`q`), puzzles (mate-in-1 pack, 3 tries each), eval bar (`e`,
+engine), resign (`q`), puzzles (mate-in-1 pack, 3 tries each), post-game
+move review (step left/right through every ply), eval bar (`e`,
 hidden by default). Checks pop
 top-right via `toast.top`; game-over and side panels never show stale
 to-move lines. Screen ownership via `tui.screen`, key decoding via

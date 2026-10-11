@@ -75,7 +75,7 @@ pub func run(eng_w: person.Engine, eng_b: person.Engine) -> bool {
     board_view.ensure_config()
     style := board_view.resolve_style()
     src := board_view.style_source()
-    st := game.Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 0, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
+    st := game.Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 0, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
     st = game.refresh_bar(st)
     quit := false
     while !quit {

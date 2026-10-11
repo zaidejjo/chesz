@@ -585,7 +585,7 @@ func clock_format() {
 }
 
 func report_frame(evals: [int], sans: [str], played: [int], wms: int) -> game.Frame {
-    st := game.Frame{pos: board.setup(), hist: [], sans: sans, played: played, cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: wms, bms: 60000, inc: 0, turn_ms: 0, evals: evals}
+    st := game.Frame{pos: board.setup(), hist: [], sans: sans, played: played, cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: wms, bms: 60000, inc: 0, turn_ms: 0, evals: evals}
     st
 }
 
