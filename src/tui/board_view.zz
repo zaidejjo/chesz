@@ -443,6 +443,26 @@ pub func resolve_style() -> int {
     2
 }
 
+// Where the resolved style came from (panel diagnostics).
+
+pub func style_source() -> str {
+    if let .some(v) = env.get_var("CHESS_PIECES") {
+        if style_of(v) >= 0 {
+            return "env"
+        }
+    }
+    if file_style(config_path()) >= 0 {
+        return "config"
+    }
+    if file_style(home_dir() + "/.config/chesz.json") >= 0 {
+        return "config"
+    }
+    if file_style(home_dir() + "/.config/chess.json") >= 0 {
+        return "config"
+    }
+    "default"
+}
+
 // First-run setup: create ~/.config/chesz.json with defaults when no
 // config exists yet. Never overwrites.
 

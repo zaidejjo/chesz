@@ -14,13 +14,17 @@ import chesz.tui.pick
 import tui.keys as tkeys
 import tui.screen
 
-func watch_panel(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mode: int) -> [str] {
+func watch_panel(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mode: int, style: int, src: str) -> [str] {
     out := []
     out = vec.push(out, "ZZ Chess 0.2.0 — watch")
-    if mode == 0 {
-        out = vec.push(out, "Pieces: letters")
+    if style == 1 {
+        out = vec.push(out, "Pieces: glyphs [" + src + "]")
     } else {
-        out = vec.push(out, "Pieces: ASCII art")
+        if style == 2 {
+            out = vec.push(out, "Pieces: letters [" + src + "]")
+        } else {
+            out = vec.push(out, "Pieces: ASCII art [" + src + "]")
+        }
     }
     out = vec.push(out, "White: " + eng_w.name + " (" + str(eng_w.elo) + ")")
     out = vec.push(out, "Black: " + eng_b.name + " (" + str(eng_b.elo) + ")")
@@ -43,9 +47,9 @@ func watch_panel(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mod
     out
 }
 
-func watch_draw(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mode: int, style: int) {
+func watch_draw(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mode: int, style: int, src: str) {
     rows := board_view.render(st.pos, 0 - 1, 0 - 1, [], st.last_from, st.last_to, mode, style)
-    side := watch_panel(st, eng_w, eng_b, mode)
+    side := watch_panel(st, eng_w, eng_b, mode, style, src)
     game.draw_frame(rows, side)
 }
 
@@ -61,16 +65,17 @@ pub func run(eng_w: person.Engine, eng_b: person.Engine) -> bool {
     mode := screen.mode()
     board_view.ensure_config()
     style := board_view.resolve_style()
+    src := board_view.style_source()
     st := game.Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 0, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: ""}
     quit := false
     while !quit {
         res := person.result(st.pos, st.hist)
         if res != 0 {
-            watch_draw(st, eng_w, eng_b, mode, style)
+            watch_draw(st, eng_w, eng_b, mode, style, src)
             pick.pick(person.result_line(res), ["OK"])
             quit = true
         } else {
-            watch_draw(st, eng_w, eng_b, mode, style)
+            watch_draw(st, eng_w, eng_b, mode, style, src)
             if let .ok(v) = term.poll(400) {
                 if v {
                     k := tkeys.read()
