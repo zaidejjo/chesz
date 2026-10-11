@@ -14,20 +14,21 @@ import tui.keys as tkeys
 import tui.screen
 
 // Pure selection step (unit-testable): arrows, hjkl, home/end.
+// Wraps around both ends — up from the first lands on the last.
 
 pub func step(sel: int, n: int, key: int) -> int {
     if key == tkeys.up() || key == 107 {
         if sel > 0 {
             sel - 1
         } else {
-            0
+            n - 1
         }
     } else {
         if key == tkeys.down() || key == 106 {
             if sel + 1 < n {
                 sel + 1
             } else {
-                n - 1
+                0
             }
         } else {
             if key == 1004 {
@@ -43,9 +44,68 @@ pub func step(sel: int, n: int, key: int) -> int {
     }
 }
 
-func view(title: str, options: [str], sel: int) -> [str] {
+// Fuzzy subsequence match (case-insensitive): every query byte in
+// order, gaps allowed. Byte-wise is exact for our ASCII menus.
+
+pub func matches(q: str, name: str) -> bool {
+    if q == "" {
+        return true
+    }
+    qb := str.bytes(str.to_lower(q))
+    nb := str.bytes(str.to_lower(name))
+    j := 0
+    i := 0
+    while i < len(qb) {
+        found := false
+        while j < len(nb) && !found {
+            if nb[j] == qb[i] {
+                found = true
+            }
+            j = j + 1
+        }
+        if !found {
+            return false
+        }
+        i = i + 1
+    }
+    true
+}
+
+pub func drop_last(q: str) -> str {
+    b := str.bytes(q)
+    if len(b) == 0 {
+        return ""
+    }
+    out := ""
+    i := 0
+    while i < len(b) - 1 {
+        out = out + str.chr(b[i])
+        i = i + 1
+    }
+    out
+}
+
+func filtered(options: [str], idx: [int], query: str) -> [str] {
+    out := []
+    i := 0
+    while i < len(idx) {
+        if matches(query, options[idx[i]]) {
+            out = vec.push(out, options[idx[i]])
+        }
+        i = i + 1
+    }
+    out
+}
+
+// Pure dialog frame (unit-testable): rounded box, divider, footer hint.
+
+pub func view(title: str, options: [str], sel: int, query: str) -> [str] {
+    head := title
+    if len(query) > 0 {
+        head = title + " [" + query + "]"
+    }
     body := []
-    body = vec.push(body, title)
+    body = vec.push(body, head)
     body = vec.push(body, "")
     i := 0
     while i < len(options) {
@@ -56,7 +116,9 @@ func view(title: str, options: [str], sel: int) -> [str] {
         body = vec.push(body, mark + options[i])
         i = i + 1
     }
-    w := 30
+    body = vec.push(body, "")
+    hint := "arrows move, enter choose, esc back"
+    w := len(hint) + 6
     i = 0
     while i < len(body) {
         L := len(body[i]) + 6
@@ -65,7 +127,15 @@ func view(title: str, options: [str], sel: int) -> [str] {
         }
         i = i + 1
     }
-    win.box_at(0, 0, w, body, 1, 0)
+    div := ""
+    i = 0
+    while i < w - 3 {
+        div = div + "-"
+        i = i + 1
+    }
+    body = vec.push(body, div)
+    body = vec.push(body, hint)
+    win.box_at(0, 0, w, body, 2, 0)
 }
 
 // Modal pick; index or -1 on esc/EOF. Caller must own raw mode
@@ -76,15 +146,27 @@ pub func pick(title: str, options: [str]) -> int {
         return 0 - 1
     }
     sel := 0
+    query := ""
     live := true
     while live {
-        rows := view(title, options, sel)
+        shown := []
+        i := 0
+        while i < len(options) {
+            if matches(query, options[i]) {
+                shown = vec.push(shown, i)
+            }
+            i = i + 1
+        }
+        if sel >= len(shown) {
+            sel = 0
+        }
+        rows := view(title, filtered(options, shown, query), sel, query)
         ox := 0
         oy := 0
         sz := screen.size()
         if len(sz) >= 2 {
             vw := 0
-            i := 0
+            i = 0
             while i < len(rows) {
                 L := len(rows[i])
                 if L > vw {
@@ -107,19 +189,42 @@ pub func pick(title: str, options: [str]) -> int {
         if mouse.is_mouse(ev) {
             if ev[1] == 0 {
                 idx := (ev[3] - 1 - oy) - 2
-                if idx >= 0 && idx < len(options) {
-                    return idx
+                if idx >= 0 && idx < len(shown) {
+                    return shown[idx]
                 }
             }
         } else {
             k := ev[0]
             if k == tkeys.enter() {
-                return sel
+                if len(shown) > 0 {
+                    return shown[sel]
+                }
+            } else {
+                if k == tkeys.esc() {
+                    if len(query) > 0 {
+                        query = ""
+                        sel = 0
+                    } else {
+                        return 0 - 1
+                    }
+                } else {
+                    if k == tkeys.eof() {
+                        return 0 - 1
+                    } else {
+                        if k == 127 || k == 8 {
+                            query = drop_last(query)
+                            sel = 0
+                        } else {
+                            if k >= 32 && k <= 126 {
+                                query = query + str.chr(k)
+                                sel = 0
+                            } else {
+                                sel = step(sel, len(shown), k)
+                            }
+                        }
+                    }
+                }
             }
-            if k == tkeys.esc() || k == tkeys.eof() {
-                return 0 - 1
-            }
-            sel = step(sel, len(options), k)
         }
     }
     0 - 1

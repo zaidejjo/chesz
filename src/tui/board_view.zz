@@ -95,38 +95,29 @@ func glyph_for(v: int, mode: int) -> str {
     }
 }
 
-// Piece ink: near-black coffee on both shades in truecolor/256 (the
-// outline-vs-filled glyphs carry the side); bright pairs on basic16.
+// Piece ink: white pieces ride a dark coffee chip, black pieces a cream
+// chip — constant islands that read on every square shade and every
+// theme, instead of ink mixed into the square itself.
 
-func piece_fg(v: int, text: str, mode: int, sq: int) -> str {
+func piece_fg(v: int, text: str, mode: int) -> str {
     if mode == 0 {
         return text
     }
     if mode >= 3 {
-        // Ivory vanishes on the light squares, so white pieces read
-        // dark bronze there and ivory on the dark ones — the outline
-        // effect real sets get from black trim. Black stays umber:
-        // it contrasts on both shades.
-        if v < 0 {
-            return colors.bold(colors.rgb(text, 45, 30, 18))
-        }
         if v > 0 {
-            if (board.file_of(sq) + board.rank_of(sq)) % 2 == 1 {
-                return colors.bold(colors.rgb(text, 110, 58, 22))
-            }
-            return colors.bold(colors.rgb(text, 255, 250, 240))
+            return colors.bold(colors.bg_rgb(colors.rgb(text, 255, 255, 255), 55, 35, 20))
+        }
+        if v < 0 {
+            return colors.bold(colors.bg_rgb(colors.rgb(text, 30, 20, 15), 235, 225, 205))
         }
         return text
     }
     if mode == 2 {
-        if v < 0 {
-            return colors.bold(colors.color256(text, 232))
-        }
         if v > 0 {
-            if (board.file_of(sq) + board.rank_of(sq)) % 2 == 1 {
-                return colors.bold(colors.color256(text, 94))
-            }
-            return colors.bold(colors.color256(text, 231))
+            return colors.bold(colors.bg_256(colors.color256(text, 231), 94))
+        }
+        if v < 0 {
+            return colors.bold(colors.bg_256(colors.color256(text, 232), 230))
         }
         return text
     }
@@ -298,7 +289,7 @@ func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], 
                 }
             }
         }
-        cell := piece_fg(v, art, mode, sq)
+        cell := piece_fg(v, art, mode)
         line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, mode, theme, pal)
         f = f + 1
     }
@@ -401,6 +392,17 @@ func theme_names_all() -> [str] {
 
 pub func theme_count() -> int {
     len(theme_names_all())
+}
+
+pub func all_theme_names() -> [str] {
+    out := theme_names_all()
+    customs := custom_names()
+    i := 0
+    while i < len(customs) {
+        out = vec.push(out, customs[i])
+        i = i + 1
+    }
+    out
 }
 
 pub func theme_of(name: str) -> int {
@@ -743,7 +745,7 @@ func esc_json(t: str) -> str {
     str.replace(s, "\"", "\\\"")
 }
 
-pub func set_last_dir(dir: str) -> str {
+func current_style() -> int {
     style := file_style(config_path())
     if style < 0 {
         style = file_style(home_dir() + "/.config/chesz.json")
@@ -754,10 +756,18 @@ pub func set_last_dir(dir: str) -> str {
     if style < 0 {
         style = 2
     }
+    style
+}
+
+func current_theme() -> int {
     theme := theme_in_json_file(config_path())
     if theme < 0 {
         theme = 0
     }
+    theme
+}
+
+func save_config(style: int, theme: int, dir: str) -> str {
     match fs.mkdir_all(home_dir() + "/.config/chesz") {
         .ok(_) => 0
         .err(_) => 0 - 1
@@ -767,6 +777,18 @@ pub func set_last_dir(dir: str) -> str {
         .err(_) => 0 - 1
     }
     config_path()
+}
+
+pub func set_last_dir(dir: str) -> str {
+    save_config(current_style(), current_theme(), dir)
+}
+
+pub func set_theme(name: str) -> str {
+    id := theme_id(name)
+    if id < 0 {
+        return ""
+    }
+    save_config(current_style(), id, read_last_dir())
 }
 
 pub func ensure_config() -> str {

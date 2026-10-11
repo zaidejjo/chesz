@@ -159,6 +159,27 @@ func load_pgn_flow() {
     }
 }
 
+func theme_palette() {
+    names := board_view.all_theme_names()
+    cur := board_view.theme_name(board_view.resolve_theme())
+    opts := []
+    i := 0
+    while i < len(names) {
+        mark := "  "
+        if names[i] == cur {
+            mark = "* "
+        }
+        opts = vec.push(opts, mark + names[i])
+        i = i + 1
+    }
+    c := pick.pick("Board theme", opts)
+    if c < 0 || c >= len(names) {
+        return
+    }
+    _s := board_view.set_theme(names[c])
+    _s = _s
+}
+
 pub func run() -> bool {
     if !screen.is_tty() {
         return false
@@ -170,7 +191,7 @@ pub func run() -> bool {
     while again {
         raw_on()
         mouse.enable()
-        c := pick.pick("ZZ Chess 0.2.0", ["Play vs engine", "Two humans (hotseat)", "Load PGN game", "Puzzles", "Watch engine vs engine", "Quit"])
+        c := pick.pick("ZZ Chess", ["Play vs engine", "Two humans (hotseat)", "Load PGN game", "Puzzles", "Board theme", "Watch engine vs engine", "Quit"])
         if c == 0 {
             side := color_palette()
             if side != 0 {
@@ -200,15 +221,19 @@ pub func run() -> bool {
                         mouse.enable()
                     } else {
                         if c == 4 {
-                            w := engine_palette()
-                            b := engine_palette()
-                            watched := watch.run(w, b)
-                            if !watched {
+                            theme_palette()
+                        } else {
+                            if c == 5 {
+                                w := engine_palette()
+                                b := engine_palette()
+                                watched := watch.run(w, b)
+                                if !watched {
+                                    again = false
+                                }
+                                mouse.enable()
+                            } else {
                                 again = false
                             }
-                            mouse.enable()
-                        } else {
-                            again = false
                         }
                     }
                 }
