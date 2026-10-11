@@ -77,33 +77,63 @@ func score_root(p: board.Pos, ms: [int], d: int) -> [int] {
     out
 }
 
-// Reorder moves by their previous-iteration scores, best first
-// (the poor engine's hash move).
+// Score every root move at depth d, abandoning the tail when the
+// deadline passes (deadline < 0 means no cap). Unsearched moves keep
+// their previous scores, so the clock bounds overshoot to one move
+// instead of one depth.
 
-func order_by_scores(ms: [int], scores: [int]) -> [int] {
+func score_root_capped(p: board.Pos, ms: [int], prev: [int], d: int, deadline: int) -> [int] {
     out := []
-    used := []
-    n := 0
-    while n < len(ms) {
-        best_i := 0 - 1
-        best_s := 0 - 10000000
-        i := 0
-        while i < len(ms) {
-            if !contains(used, i) && scores[i] > best_s {
-                best_s = scores[i]
-                best_i = i
-            }
-            i = i + 1
-        }
-        if best_i < 0 {
-            n = len(ms)
+    i := 0
+    while i < len(ms) {
+        if deadline > 0 && time.now_ms() >= deadline {
+            out = vec.push(out, prev[i])
         } else {
-            out = vec.push(out, ms[best_i])
-            used = vec.push(used, best_i)
-            n = n + 1
+            q := moves.make(p, ms[i])
+            out = vec.push(out, 0 - ai.search(q, d - 1, 0 - 1000000, 1000000))
         }
+        i = i + 1
     }
     out
+}
+
+// Reorder moves by their previous-iteration scores, best first
+// (the poor engine's hash move). Index sort + gather keeps a parallel
+// score array aligned through the permutation.
+
+func order_idx(scores: [int]) -> [int] {
+    idx := []
+    i := 0
+    while i < len(scores) {
+        idx = vec.push(idx, i)
+        i = i + 1
+    }
+    n := 1
+    while n < len(idx) {
+        key := idx[n]
+        j := n - 1
+        while j >= 0 && scores[idx[j]] < scores[key] {
+            idx[j + 1] = idx[j]
+            j = j - 1
+        }
+        idx[j + 1] = key
+        n = n + 1
+    }
+    idx
+}
+
+func gather(v: [int], idx: [int]) -> [int] {
+    out := []
+    i := 0
+    while i < len(idx) {
+        out = vec.push(out, v[idx[i]])
+        i = i + 1
+    }
+    out
+}
+
+func order_by_scores(ms: [int], scores: [int]) -> [int] {
+    gather(ms, order_idx(scores))
 }
 
 func contains(v: [int], x: int) -> bool {
@@ -174,8 +204,14 @@ pub func search_root(eng: Engine, p: board.Pos, hist: [int]) -> Root {
         if eng.movems > 0 && time.now_ms() - start >= eng.movems {
             d = eng.depth + 1
         } else {
-            ms = order_by_scores(ms, scores)
-            scores = score_root(p, ms, d)
+            ix := order_idx(scores)
+            ms = gather(ms, ix)
+            scores = gather(scores, ix)
+            dl := 0 - 1
+            if eng.movems > 0 {
+                dl = start + eng.movems
+            }
+            scores = score_root_capped(p, ms, scores, d, dl)
             reached = d
             d = d + 1
         }

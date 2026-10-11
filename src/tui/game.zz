@@ -250,7 +250,7 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
                     quit = true
                 }
             } else {
-                draw(st, eng, human_side, "thinking… (" + eng.name + " depth " + str(eng.depth) + ")", mode)
+                draw(st, eng, human_side, "thinking… (" + eng.name + " d" + str(eng.depth) + " " + str(eng.movems) + "ms)", mode)
                 m := book.probe(st.pos)
                 if m == 0 {
                     m = person.best_move_for(eng, st.pos, st.hist)

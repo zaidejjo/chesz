@@ -69,73 +69,6 @@ pub func find_moves(legal: [int], from: int, to: int) -> [int] {
     out
 }
 
-func uni(v: int) -> str {
-    if v == 1 {
-        "♙"
-    } else {
-        if v == 2 {
-            "♘"
-        } else {
-            if v == 3 {
-                "♗"
-            } else {
-                if v == 4 {
-                    "♖"
-                } else {
-                    if v == 5 {
-                        "♕"
-                    } else {
-                        if v == 6 {
-                            "♔"
-                        } else {
-                            if v == 0 - 1 {
-                                "♟"
-                            } else {
-                                if v == 0 - 2 {
-                                    "♞"
-                                } else {
-                                    if v == 0 - 3 {
-                                        "♝"
-                                    } else {
-                                        if v == 0 - 4 {
-                                            "♜"
-                                        } else {
-                                            if v == 0 - 5 {
-                                                "♛"
-                                            } else {
-                                                if v == 0 - 6 {
-                                                    "♚"
-                                                } else {
-                                                    " "
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-func glyph_for(v: int, mode: int) -> str {
-    if mode == 0 {
-        if v == 0 {
-            " "
-        } else {
-            board.glyph(v)
-        }
-    } else {
-        uni(v)
-    }
-}
-
-// Piece ink: near-black coffee on both shades in truecolor/256 (the
-// outline-vs-filled glyphs carry the side); bright pairs on basic16.
-
 func piece_fg(v: int, text: str, mode: int) -> str {
     if mode == 0 {
         return text
@@ -157,8 +90,22 @@ func piece_fg(v: int, text: str, mode: int) -> str {
     }
 }
 
-// Lichess-brown squares: tan/dark in truecolor, closest 256-cell
-// indices below that, named buckets on basic16.
+func rank_label(r: int, mode: int) -> str {
+    t := str(r + 1) + " "
+    if mode == 0 {
+        t
+    } else {
+        colors.dim(t)
+    }
+}
+
+func vbar(mode: int) -> str {
+    if mode == 0 {
+        "|"
+    } else {
+        colors.dim("│")
+    }
+}
 
 func shade(sq: int, text: str, mode: int) -> str {
     if mode >= 3 {
@@ -185,7 +132,6 @@ func shade(sq: int, text: str, mode: int) -> str {
 }
 
 func hi_bg(text: str, kind: int, mode: int) -> str {
-    // kind: 0 check, 1 selected, 2 target, 3 last-move.
     if mode >= 3 {
         if kind == 0 {
             return colors.bg_rgb(text, 220, 60, 60)
@@ -253,14 +199,104 @@ func mark_bg(sq: int, text: str, cursor: int, selected: int, targets: [int], las
     inner
 }
 
-func rank_label(r: int, mode: int) -> str {
-    t := str(r + 1) + " "
-    if mode == 0 {
-        t
+// Pixel pieces: 7x4 hand art (X = ink), rasterized to half-block
+// pairs — two art rows per cell row. Outline-vs-filled reads the side
+// in print-diagram fashion; ink color comes from piece_fg.
+
+func art_rows(pc: int) -> [str] {
+    if pc == 1 {
+        ["..XXX..", "..XXX..", "...X...", ".XXXXX."]
     } else {
-        colors.dim(t)
+        if pc == 2 {
+            ["..XX...", ".XXXX..", "XXXXX..", ".XXXXX."]
+        } else {
+            if pc == 3 {
+                ["...X...", "..XXX..", "...X...", ".XXXXX."]
+            } else {
+                if pc == 4 {
+                    [".X.X.X.", ".XXXXX.", "...X...", ".XXXXX."]
+                } else {
+                    if pc == 5 {
+                        [".X.X.X.", "XXXXXXX", "..XXX..", ".XXXXX."]
+                    } else {
+                        ["..X.X..", "...X...", "..XXX..", ".XXXXX."]
+                    }
+                }
+            }
+        }
     }
 }
+
+func abs_pc(v: int) -> int {
+    if v < 0 {
+        0 - v
+    } else {
+        v
+    }
+}
+
+func art_row(v: int, sub: int) -> str {
+    if v == 0 {
+        return "       "
+    }
+    rows := art_rows(abs_pc(v))
+    top := rows[sub * 2]
+    bot := rows[sub * 2 + 1]
+    out := ""
+    c := 0
+    while c < 7 {
+        t := top[c]
+        b := bot[c]
+        if t == "X" {
+            if b == "X" {
+                out = out + "█"
+            } else {
+                out = out + "▀"
+            }
+        } else {
+            if b == "X" {
+                out = out + "▄"
+            } else {
+                out = out + " "
+            }
+        }
+        c = c + 1
+    }
+    out
+}
+
+func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, mode: int, piece_line: bool) -> str {
+    head := "  │"
+    if piece_line {
+        head = rank_label(r, mode) + vbar(mode)
+    } else {
+        if mode != 0 {
+            head = "  " + colors.dim("│")
+        }
+    }
+    line := head
+    f := 0
+    while f < 8 {
+        sq := r * 8 + f
+        v := p.b[sq]
+        sub := 0
+        if piece_line {
+            sub = 1
+        }
+        cell := piece_fg(v, art_row(v, sub), mode)
+        line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, mode)
+        f = f + 1
+    }
+    if mode == 0 {
+        line + "|"
+    } else {
+        line + vbar(mode)
+    }
+}
+
+// Stack board rows beside a plain-text side panel and center the
+// block: pure math on visible widths (ANSI stripped), so highlights
+// never shift columns. ox/oy pad left/top.
 
 pub func render(p: board.Pos, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, mode: int) -> [str] {
     check_king := 0 - 1
@@ -280,8 +316,8 @@ pub func render(p: board.Pos, cursor: int, selected: int, targets: [int], last_f
     rows
 }
 
-// 5-wide cells, 2 tall: piece sits centered on the lower sub-row.
-// Border frame + labels included; 19 rows total, 44 cells wide.
+// 7-wide cells, 2 tall: pixel art pairs per cell row.
+// Border frame + labels included; 19 rows total, 60 cells wide.
 
 func rep_str(g: str, n: int) -> str {
     s := ""
@@ -294,20 +330,18 @@ func rep_str(g: str, n: int) -> str {
 }
 
 func frame_top(mode: int) -> str {
-    t := "  ┌" + rep_str("─", 56) + "┐"
     if mode == 0 {
         "  +" + rep_str("-", 56) + "+"
     } else {
-        colors.dim(t)
+        colors.dim("  ┌" + rep_str("─", 56) + "┐")
     }
 }
 
 func frame_bottom(mode: int) -> str {
-    t := "  └" + rep_str("─", 56) + "┘"
     if mode == 0 {
         "  +" + rep_str("-", 56) + "+"
     } else {
-        colors.dim(t)
+        colors.dim("  └" + rep_str("─", 56) + "┘")
     }
 }
 
@@ -319,47 +353,6 @@ func foot_row(mode: int) -> str {
         colors.dim(foot)
     }
 }
-
-func vbar(mode: int) -> str {
-    if mode == 0 {
-        "|"
-    } else {
-        colors.dim("│")
-    }
-}
-
-func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, mode: int, piece_line: bool) -> str {
-    head := "  │"
-    if piece_line {
-        head = rank_label(r, mode) + vbar(mode)
-    } else {
-        if mode != 0 {
-            head = "  " + colors.dim("│")
-        }
-    }
-    line := head
-    f := 0
-    while f < 8 {
-        sq := r * 8 + f
-        glyph := " "
-        if piece_line {
-            glyph = glyph_for(p.b[sq], mode)
-        }
-        v := p.b[sq]
-        cell := piece_fg(v, "   " + glyph + "   ", mode)
-        line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, mode)
-        f = f + 1
-    }
-    if mode == 0 {
-        line + "|"
-    } else {
-        line + vbar(mode)
-    }
-}
-
-// Stack board rows beside a plain-text side panel and center the
-// block: pure math on visible widths (ANSI stripped), so highlights
-// never shift columns. ox/oy pad left/top.
 
 pub func compose(rows: [str], side: [str], ox: int, oy: int) -> [str] {
     width := 0

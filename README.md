@@ -80,7 +80,9 @@ printf 'uci\nisready\nposition startpos\ngo depth 6\nquit\n' | /tmp/chess uci
 no args opens floating palettes (play/watch/quit → color → engine),
 then the big board: centered 7×2 lichess-brown squares with a closed
 border frame (truecolor, 256-color, and basic16 tiers with a plain-ASCII
-fallback), real Unicode pieces (♔♕♖♗♘♙ vs ♚♛♜♝♞♟), cursor
+fallback), hand-designed pixel pieces (7×4 art rasterized to
+half-block pairs — same silhouette both sides, ink color reads the
+side), cursor
 (arrows/hjkl), select with Enter (targets light up), promotion
 picker, coach hint (`?`), undo (`u`), resign (`q`). Checks pop
 top-right via `toast.top`; game-over and side panels never show stale
@@ -116,7 +118,8 @@ Novice/Club are comfortable on the VM. Budgets above are honored by
 iterative deepening — worst case the engine falls back to depth 1.
 
 Iterative deepening guarantees a move even when the clock fires mid
-thought (worst case: the depth-1 reply). Joker is the "random rating":
+thought (worst case: the depth-1 reply). Root scoring abandons its
+tail at the deadline, so overshoot is one move, not one depth. Joker is the "random rating":
 every legal move equally likely, every game a new disaster.
 
 ## Draws
