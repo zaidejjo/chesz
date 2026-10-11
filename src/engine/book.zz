@@ -35,3 +35,43 @@ pub func probe(p: board.Pos) -> int {
     }
     0
 }
+
+// Opening name from the placement ("" when unrecognized — the panel
+// hides the line). Rank fields index 0..7 top-down: [2] is rank 6,
+// [3] rank 5, [4] rank 4.
+
+pub func name_of(p: board.Pos) -> str {
+    fields := str.split(fen.generate(p), " ")
+    if len(fields) < 1 {
+        return ""
+    }
+    ranks := str.split(fields[0], "/")
+    if len(ranks) < 8 {
+        return ""
+    }
+    if str.starts_with(ranks[3], "1B") {
+        return "Ruy Lopez"
+    }
+    if str.starts_with(ranks[4], "2B") {
+        return "Italian Game"
+    }
+    if ranks[3] == "2p5" {
+        return "Sicilian Defence"
+    }
+    if ranks[2] == "4p3" && ranks[3] == "3p4" {
+        return "French Defence"
+    }
+    if ranks[2] == "2p5" {
+        return "Caro-Kann"
+    }
+    if ranks[4] == "3P1B2" {
+        return "London System"
+    }
+    if ranks[4] == "2PP4" && ranks[3] == "3p4" {
+        return "Queen's Gambit"
+    }
+    if ranks[4] == "4PP2" {
+        return "King's Gambit"
+    }
+    ""
+}

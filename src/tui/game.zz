@@ -198,6 +198,10 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int
     if len(cl) > 0 {
         out = vec.push(out, cl)
     }
+    op := book.name_of(st.pos)
+    if len(op) > 0 {
+        out = vec.push(out, "Opening: " + op)
+    }
     out = vec.push(out, gfx_line(style, src))
     if st.show_bar {
         out = vec.push(out, board_view.eval_line(st.bar_cp, st.bar_pct, st.bar_mate))
