@@ -10,7 +10,7 @@ import chess.engine.book
 import chess.engine.person
 import chess.tui.board_view
 import chess.tui.game
-import toast.win
+import chess.tui.pick
 import tui.keys as tkeys
 import tui.screen
 
@@ -75,7 +75,7 @@ pub func run(eng_w: person.Engine, eng_b: person.Engine) -> bool {
         res := person.result(st.pos, st.hist)
         if res != 0 {
             watch_draw(st, eng_w, eng_b, mode)
-            win.show(person.result_line(res), ["played " + str(len(st.played)) + " plies"], ["OK"])
+            pick.pick(person.result_line(res), ["OK"])
             quit = true
         } else {
             watch_draw(st, eng_w, eng_b, mode)

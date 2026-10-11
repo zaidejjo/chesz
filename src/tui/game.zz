@@ -15,8 +15,8 @@ import chess.engine.moves
 import chess.engine.person
 import chess.engine.san
 import chess.tui.board_view
+import chess.tui.pick
 import toast.toast
-import toast.win
 import tui.keys as tkeys
 import tui.screen
 
@@ -146,7 +146,7 @@ func pick_promo(legal: [int], from: int, to: int) -> int {
     if moves.mv_promo(opts[0]) == 0 {
         return opts[0]
     }
-    c := win.show("Promote to", ["Pick the promotion piece:"], ["Queen", "Rook", "Bishop", "Knight"])
+    c := pick.pick("Promote to", ["Queen", "Rook", "Bishop", "Knight"])
     if c < 0 {
         return 0
     }
@@ -212,7 +212,7 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
         res := person.result(st.pos, st.hist)
         if res != 0 {
             draw(st, eng, human_side, person.result_line(res), mode)
-            win.show(person.result_line(res), ["played " + str(len(st.played)) + " plies vs " + eng.name], ["OK"])
+            pick.pick(person.result_line(res), ["OK"])
             quit = true
         } else {
             if st.pos.side == human_side {
@@ -246,7 +246,7 @@ func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int) -> F
             done = true
         } else {
             if k == 113 {
-                if win.show("Resign?", ["Resign this game?"], ["Resign", "Keep playing"]) == 0 {
+                if pick.pick("Resign?", ["Resign", "Keep playing"]) == 0 {
                     st.cursor = 0 - 1000
                     done = true
                 }

@@ -7,8 +7,8 @@ import std.term
 
 import chess.engine.person
 import chess.tui.game
+import chess.tui.pick
 import chess.tui.watch
-import toast.win
 import tui.screen
 
 // Palettes read raw bytes (Enter must arrive as 13, not cooked \n).
@@ -22,7 +22,7 @@ func raw_off() {
 
 func engine_palette() -> person.Engine {
     opts := person.roster_names()
-    c := win.palette("Engine", opts)
+    c := pick.pick("Engine", opts)
     if c < 0 || c >= len(opts) {
         person.club()
     } else {
@@ -32,7 +32,7 @@ func engine_palette() -> person.Engine {
 
 func color_palette() -> int {
     // 1 white, -1 black, 0 cancelled.
-    c := win.palette("Play as", ["White", "Black"])
+    c := pick.pick("Play as", ["White", "Black"])
     if c == 1 {
         0 - 1
     } else {
@@ -55,7 +55,7 @@ pub func run() -> bool {
     defer raw_off()
     again := true
     while again {
-        c := win.palette("ZZ Chess 0.2.0", ["Play vs engine", "Watch engine vs engine", "Quit"])
+        c := pick.pick("ZZ Chess 0.2.0", ["Play vs engine", "Watch engine vs engine", "Quit"])
         if c == 0 {
             side := color_palette()
             if side != 0 {

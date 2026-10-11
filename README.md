@@ -85,9 +85,15 @@ fallback), real Unicode pieces (♔♕♖♗♘♙ vs ♚♛♜♝♞♟), curso
 picker, coach hint (`?`), undo (`u`), resign (`q`). Checks pop
 top-right via `toast.top`; game-over and side panels never show stale
 to-move lines. Screen ownership via `tui.screen`, key decoding via
-`alias tui.keys` (full `ask` entry collides — zaidejjo/zz#380), lobby
-palettes via `toast.win`. Watch mode spectates engine vs engine with
-a quit poll between moves.
+`alias tui.keys` (full `ask` entry collides — zaidejjo/zz#380). Watch
+mode spectates engine vs engine with a quit poll between moves.
+
+All option picking (lobby, promotion, resign, game-over) goes through
+`src/tui/pick.zz`: centered `win.box_at` drawing plus a decoded loop
+(arrows/hjkl/home/end/enter/esc). The toast `palette`/`show` widgets
+read raw bytes but compare decoded codes, so arrows arrive as ESC and
+cancel — unusable here; `toast.top`/`flash` (timed, keyless) and pure
+`box_at` stay.
 
 ## Personalities
 
