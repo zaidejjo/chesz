@@ -413,7 +413,7 @@ func import_pgn(path: str) {
                     println(person.result_line(st))
                 }
             }
-        },
+        }
         .err(_) => println("cannot read " + path)
     }
 }
@@ -437,6 +437,27 @@ func show_fen(fen_text: str) {
         }
         .none => println("bad FEN")
     }
+}
+
+func show_help() {
+    println("chesz — chess in the terminal (engine + board UI)")
+    println("")
+    println("usage: chesz [command]")
+    println("")
+    println("  (no args)          lobby: play, hotseat, load PGN, puzzles, watch")
+    println("  play               human (white) vs Club in plain text")
+    println("  tui [white|black]  board UI vs Club (falls back to text)")
+    println("  ai                 Club vs Club demo, 40 plies")
+    println("  gauntlet           Novice vs Club x4 with an Elo table")
+    println("  analyze [FEN]      Expert top-3 over a position")
+    println("  fen FEN            inspect a position (moves, checks, draws)")
+    println("  pgn FILE           replay a PGN file, print the game")
+    println("  perft              movegen self-check (20 / 400 / 8902)")
+    println("  uci                UCI loop for GUIs (Cutechess, lichess bots)")
+    println("  --help, -h         this help")
+    println("")
+    println("board keys: arrows/hjkl move · enter select · ? hint · u undo")
+    println("            q resign · e eval bar")
 }
 
 func main(args: [str]) {
@@ -492,5 +513,9 @@ func main(args: [str]) {
         import_pgn(args[1])
         return
     }
-    println("usage: perft | ai | play | tui [white|black] | gauntlet | uci | analyze [FEN] | fen FEN | pgn FILE")
+    if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
+        show_help()
+        return
+    }
+    println("usage: chesz [--help] | perft | ai | play | tui [white|black] | gauntlet | uci | analyze [FEN] | fen FEN | pgn FILE")
 }
