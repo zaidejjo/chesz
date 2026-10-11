@@ -74,54 +74,12 @@ pub func find_moves(legal: [int], from: int, to: int) -> [int] {
 }
 
 func uni(v: int) -> str {
-    if v == 1 {
-        "♙"
+    table := ["♚", "♛", "♜", "♝", "♞", "♟", " ", "♙", "♘", "♗", "♖", "♕", "♔"]
+    i := v + 6
+    if i < 0 || i >= len(table) {
+        " "
     } else {
-        if v == 2 {
-            "♘"
-        } else {
-            if v == 3 {
-                "♗"
-            } else {
-                if v == 4 {
-                    "♖"
-                } else {
-                    if v == 5 {
-                        "♕"
-                    } else {
-                        if v == 6 {
-                            "♔"
-                        } else {
-                            if v == 0 - 1 {
-                                "♟"
-                            } else {
-                                if v == 0 - 2 {
-                                    "♞"
-                                } else {
-                                    if v == 0 - 3 {
-                                        "♝"
-                                    } else {
-                                        if v == 0 - 4 {
-                                            "♜"
-                                        } else {
-                                            if v == 0 - 5 {
-                                                "♛"
-                                            } else {
-                                                if v == 0 - 6 {
-                                                    "♚"
-                                                } else {
-                                                    " "
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        table[i]
     }
 }
 
@@ -410,19 +368,15 @@ func frame_bottom(mode: int) -> str {
 // fallback), then letters. Styles: 0 ascii, 1 glyphs, 2 letters.
 
 pub func style_of(name: str) -> int {
-    if name == "glyphs" {
-        1
-    } else {
-        if name == "letters" {
-            2
-        } else {
-            if name == "ascii" {
-                0
-            } else {
-                0 - 1
-            }
+    names := ["ascii", "glyphs", "letters"]
+    i := 0
+    while i < len(names) {
+        if names[i] == name {
+            return i
         }
+        i = i + 1
     }
+    0 - 1
 }
 
 pub func style_in_json(text: str) -> int {
@@ -910,14 +864,11 @@ func foot_row(mode: int) -> str {
 // (missing black) and what Black took. Letters in mode 0.
 
 func start_count(pc: int) -> int {
-    if pc == 1 {
-        8
+    table := [0, 8, 2, 2, 2, 1]
+    if pc < 0 || pc >= len(table) {
+        2
     } else {
-        if pc == 5 {
-            1
-        } else {
-            2
-        }
+        table[pc]
     }
 }
 

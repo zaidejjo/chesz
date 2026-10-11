@@ -11,26 +11,11 @@ import board
 import moves
 
 pub func piece_val(pc: int) -> int {
-    if pc == 1 {
-        100
+    table := [0, 100, 320, 330, 500, 900, 0]
+    if pc < 0 || pc >= len(table) {
+        0
     } else {
-        if pc == 2 {
-            320
-        } else {
-            if pc == 3 {
-                330
-            } else {
-                if pc == 4 {
-                    500
-                } else {
-                    if pc == 5 {
-                        900
-                    } else {
-                        0
-                    }
-                }
-            }
-        }
+        table[pc]
     }
 }
 
@@ -44,35 +29,25 @@ pub func win_pct(cp: int) -> int {
         neg = true
         a = 0 - a
     }
-    p := 50
-    if a < 50 {
-        p = 50 + a * 7 / 50
-    } else {
-        if a < 100 {
-            p = 57 + (a - 50) * 7 / 50
-        } else {
-            if a < 200 {
-                p = 64 + (a - 100) * 12 / 100
-            } else {
-                if a < 300 {
-                    p = 76 + (a - 200) * 9 / 100
-                } else {
-                    if a < 400 {
-                        p = 85 + (a - 300) * 6 / 100
-                    } else {
-                        if a < 600 {
-                            p = 91 + (a - 400) * 5 / 200
-                        } else {
-                            if a < 1000 {
-                                p = 96 + (a - 600) * 3 / 400
-                            } else {
-                                p = 99
-                            }
-                        }
-                    }
-                }
-            }
+    lo := [0, 50, 100, 200, 300, 400, 600]
+    base := [50, 57, 64, 76, 85, 91, 96]
+    num := [7, 7, 12, 9, 6, 5, 3]
+    den := [50, 50, 100, 100, 100, 200, 400]
+    p := 99
+    i := 0
+    while i < len(lo) {
+        top := 1000000
+        if i + 1 < len(lo) {
+            top = lo[i + 1]
         }
+        if a >= lo[i] && a < top {
+            p = base[i] + (a - lo[i]) * num[i] / den[i]
+            i = len(lo)
+        }
+        i = i + 1
+    }
+    if p > 99 {
+        p = 99
     }
     if neg {
         100 - p
@@ -149,18 +124,11 @@ func king_val(f: int, r: int, phase: int) -> int {
 }
 
 func phase_w(pc: int) -> int {
-    if pc == 2 || pc == 3 {
-        1
+    table := [0, 0, 1, 1, 2, 4, 0]
+    if pc < 0 || pc >= len(table) {
+        0
     } else {
-        if pc == 4 {
-            2
-        } else {
-            if pc == 5 {
-                4
-            } else {
-                0
-            }
-        }
+        table[pc]
     }
 }
 

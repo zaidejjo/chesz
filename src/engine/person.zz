@@ -316,25 +316,10 @@ pub func result(p: board.Pos, hist: [int]) -> int {
 }
 
 pub func result_line(st: int) -> str {
-    if st == 1 {
-        "1-0 white mates"
+    table := ["", "1-0 white mates", "0-1 black mates", "1/2-1/2 stalemate", "1/2-1/2 fifty-move rule", "1/2-1/2 threefold repetition", "1/2-1/2 dead position"]
+    if st < 0 || st >= len(table) {
+        "1/2-1/2 dead position"
     } else {
-        if st == 2 {
-            "0-1 black mates"
-        } else {
-            if st == 3 {
-                "1/2-1/2 stalemate"
-            } else {
-                if st == 4 {
-                    "1/2-1/2 fifty-move rule"
-                } else {
-                    if st == 5 {
-                        "1/2-1/2 threefold repetition"
-                    } else {
-                        "1/2-1/2 dead position"
-                    }
-                }
-            }
-        }
+        table[st]
     }
 }

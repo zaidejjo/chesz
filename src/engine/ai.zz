@@ -60,20 +60,23 @@ pub func is_loud(p: board.Pos, mv: int) -> bool {
 func ordered(p: board.Pos, ms: [int], first_caps: int) -> [int] {
     out := []
     loud := []
+    scores := []
     i := 0
     while i < len(ms) {
         if is_loud(p, ms[i]) == (first_caps == 1) {
             if first_caps == 1 {
-                // Insertion by victim value (tiny lists, no alloc sort).
+                // Insertion by victim value (tiny lists, no alloc sort);
+                // scores ride alongside so each move is priced once.
                 s := loud_score(p, ms[i])
                 j := 0
                 while j < len(loud) {
-                    if loud_score(p, loud[j]) < s {
+                    if scores[j] < s {
                         break
                     }
                     j = j + 1
                 }
                 loud = vec_insert(loud, j, ms[i])
+                scores = vec_insert(scores, j, s)
             } else {
                 out = vec.push(out, ms[i])
             }

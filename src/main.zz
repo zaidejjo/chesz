@@ -227,23 +227,15 @@ pub func elo_of_pm(pm: int) -> int {
 
 pub func upper_elo(pm: int) -> int {
     // pm in (500, 1000): walk the anchor segments.
-    if pm < 640 {
-        100 * (pm - 500) / 140
-    } else {
-        if pm < 760 {
-            100 + 100 * (pm - 640) / 120
-        } else {
-            if pm < 850 {
-                200 + 100 * (pm - 760) / 90
-            } else {
-                if pm < 910 {
-                    300 + 100 * (pm - 850) / 60
-                } else {
-                    400 + 400 * (pm - 910) / 90
-                }
-            }
-        }
+    lo := [500, 640, 760, 850, 910]
+    base := [0, 100, 200, 300, 400]
+    num := [100, 100, 100, 100, 400]
+    den := [140, 120, 90, 60, 90]
+    i := 0
+    while i + 1 < len(lo) && pm >= lo[i + 1] {
+        i = i + 1
     }
+    base[i] + num[i] * (pm - lo[i]) / den[i]
 }
 
 func play_human(eng: person.Engine, human_side: int) {

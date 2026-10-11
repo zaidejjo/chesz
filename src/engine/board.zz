@@ -61,58 +61,12 @@ pub func setup() -> Pos {
 }
 
 pub func glyph(p: int) -> str {
-    if p == 0 {
-        "."
+    table := ["k", "q", "r", "b", "n", "p", ".", "P", "N", "B", "R", "Q", "K"]
+    i := p + 6
+    if i < 0 || i >= len(table) {
+        "?"
     } else {
-        if p == 1 {
-            "P"
-        } else {
-            if p == 2 {
-                "N"
-            } else {
-                if p == 3 {
-                    "B"
-                } else {
-                    if p == 4 {
-                        "R"
-                    } else {
-                        if p == 5 {
-                            "Q"
-                        } else {
-                            if p == 6 {
-                                "K"
-                            } else {
-                                if p == 0 - 1 {
-                                    "p"
-                                } else {
-                                    if p == 0 - 2 {
-                                        "n"
-                                    } else {
-                                        if p == 0 - 3 {
-                                            "b"
-                                        } else {
-                                            if p == 0 - 4 {
-                                                "r"
-                                            } else {
-                                                if p == 0 - 5 {
-                                                    "q"
-                                                } else {
-                                                    if p == 0 - 6 {
-                                                        "k"
-                                                    } else {
-                                                        "?"
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        table[i]
     }
 }
 
@@ -132,34 +86,11 @@ pub func show(b: [int]) {
 }
 
 pub func file_char(f: int) -> str {
-    if f == 0 {
-        "a"
+    table := ["a", "b", "c", "d", "e", "f", "g", "h"]
+    if f < 0 || f >= len(table) {
+        "?"
     } else {
-        if f == 1 {
-            "b"
-        } else {
-            if f == 2 {
-                "c"
-            } else {
-                if f == 3 {
-                    "d"
-                } else {
-                    if f == 4 {
-                        "e"
-                    } else {
-                        if f == 5 {
-                            "f"
-                        } else {
-                            if f == 6 {
-                                "g"
-                            } else {
-                                "h"
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        table[f]
     }
 }
 

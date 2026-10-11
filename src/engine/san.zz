@@ -7,38 +7,20 @@ import board
 import moves
 
 func piece_letter(pc: int) -> str {
-    if pc == 2 {
-        "N"
+    table := ["", "", "N", "B", "R", "Q", "K"]
+    if pc < 0 || pc >= len(table) {
+        "K"
     } else {
-        if pc == 3 {
-            "B"
-        } else {
-            if pc == 4 {
-                "R"
-            } else {
-                if pc == 5 {
-                    "Q"
-                } else {
-                    "K"
-                }
-            }
-        }
+        table[pc]
     }
 }
 
 func promo_letter(promo: int) -> str {
-    if promo == 5 {
+    table := ["", "", "=N", "=B", "=R", "=Q"]
+    if promo < 0 || promo >= len(table) {
         "=Q"
     } else {
-        if promo == 4 {
-            "=R"
-        } else {
-            if promo == 3 {
-                "=B"
-            } else {
-                "=N"
-            }
-        }
+        table[promo]
     }
 }
 
