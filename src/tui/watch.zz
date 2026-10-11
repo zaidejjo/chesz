@@ -31,6 +31,9 @@ func watch_panel(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mod
     if st.show_bar {
         out = vec.push(out, board_view.eval_line(st.bar_cp, st.bar_pct, st.bar_mate))
     }
+    if len(st.evals) > 1 {
+        out = vec.push(out, "Graph " + board_view.eval_graph(st.evals, 24))
+    }
     res := person.result(st.pos, st.hist)
     if res != 0 {
         out = vec.push(out, "")

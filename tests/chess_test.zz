@@ -743,6 +743,16 @@ func stats_text_core() {
 }
 
 @test
+func eval_graph_marks() {
+    assert_eq(board_view.eval_graph([], 24), "")
+    assert_eq(board_view.eval_graph([0, 0, 0], 3), "▅▅▅")
+    assert_eq(board_view.eval_graph([99999, 99999], 2), "██")
+    assert_eq(board_view.eval_graph([0 - 99999, 0 - 99999], 2), "▁▁")
+    g := board_view.eval_graph([0, 0, 0, 0], 2)
+    assert_eq(g, "▅▅")
+}
+
+@test
 func book_grew_past_sicilian() {
     // 1.e4 c5 2.Nf3 -> d6; French 3.Nc3; London 2...Nf6.
     match fen.parse("rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 0 1") {
