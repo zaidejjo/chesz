@@ -282,7 +282,7 @@ func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], 
         sq := r * 8 + f
         v := p.b[sq]
         art := "       "
-        if mode != 4 {
+        if true {
             st := art_style()
             if mode == 0 || st == 2 {
                 if piece_line {
@@ -371,7 +371,7 @@ func frame_bottom(mode: int) -> str {
 // Piece style: ascii character art by default (byte-clean, works
 // everywhere); glyphs or letters via CHESS_PIECES=glyphs|letters.
 
-func art_style() -> int {
+pub func art_style() -> int {
     match env.get_var("CHESS_PIECES") {
         .some(v) => {
             if v == "glyphs" {

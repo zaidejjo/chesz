@@ -17,7 +17,6 @@ import chess.engine.moves
 import chess.engine.person
 import chess.engine.san
 import chess.tui.game
-import chess.tui.img
 import chess.tui.lobby
 import chess.uci.uci
 
@@ -374,23 +373,7 @@ func analyze(fen_text: str) {
     }
 }
 
-func imgtest() {
-    lines := img.imgtest()
-    i := 0
-    while i < len(lines) {
-        println(lines[i])
-        i = i + 1
-    }
-}
 
-func gfxdiag() {
-    lines := img.diagnose()
-    i := 0
-    while i < len(lines) {
-        println(lines[i])
-        i = i + 1
-    }
-}
 
 func show_fen(fen_text: str) {
     match fen.parse(fen_text) {
@@ -418,57 +401,49 @@ func main(args: [str]) {
         if !lobby.run() {
             menu()
         }
-    } else {
-        if args[0] == "perft" {
-            perft_check()
-        } else {
-            if args[0] == "ai" {
-                play_game(person.club(), person.club(), 40)
-            } else {
-                if args[0] == "play" {
-                    play_human(person.club(), 1)
-                } else {
-                    if args[0] == "gauntlet" {
-                        gauntlet()
-                    } else {
-                        if args[0] == "uci" {
-                            uci.run()
-                        } else {
-                            if args[0] == "analyze" {
-                                if len(args) > 1 {
-                                    analyze(args[1])
-                                } else {
-                                    analyze(fen.startpos())
-                                }
-                            } else {
-                                if args[0] == "tui" {
-                                    human := 1
-                                    if len(args) > 1 && args[1] == "black" {
-                                        human = 0 - 1
-                                    }
-                                    if !game.run(person.club(), human) {
-                                        play_human(person.club(), human)
-                                    }
-                                } else {
-                                    if args[0] == "imgtest" {
-                                    imgtest()
-                                } else {
-                                    if args[0] == "gfxdiag" {
-                                    gfxdiag()
-                                } else {
-                                    if args[0] == "fen" && len(args) > 1 {
-                                        show_fen(args[1])
-                                    } else {
-                                        println("usage: perft | ai | play | tui [white|black] | gauntlet | uci | analyze [FEN] | fen \"<FEN>\" | gfxdiag | imgtest")
-                                    }
-                                }
-                                }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        return
     }
+    if args[0] == "perft" {
+        perft_check()
+        return
+    }
+    if args[0] == "ai" {
+        play_game(person.club(), person.club(), 40)
+        return
+    }
+    if args[0] == "play" {
+        play_human(person.club(), 1)
+        return
+    }
+    if args[0] == "gauntlet" {
+        gauntlet()
+        return
+    }
+    if args[0] == "uci" {
+        uci.run()
+        return
+    }
+    if args[0] == "analyze" {
+        if len(args) > 1 {
+            analyze(args[1])
+        } else {
+            analyze(fen.startpos())
+        }
+        return
+    }
+    if args[0] == "tui" {
+        human := 1
+        if len(args) > 1 && args[1] == "black" {
+            human = 0 - 1
+        }
+        if !game.run(person.club(), human) {
+            play_human(person.club(), human)
+        }
+        return
+    }
+    if args[0] == "fen" && len(args) > 1 {
+        show_fen(args[1])
+        return
+    }
+    println("usage: perft | ai | play | tui [white|black] | gauntlet | uci | analyze [FEN] | fen FEN")
 }

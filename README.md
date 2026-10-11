@@ -74,15 +74,19 @@ d_zz build -o /tmp/chess src/main.zz
 printf 'uci\nisready\nposition startpos\ngo depth 6\nquit\n' | /tmp/chess uci
 ```
 
-## Pieces: glyphs, PNGs, letters
+## Pieces: ASCII art, glyphs, letters
 
-Three tiers, auto-selected. **PNG** (kitty-graphics: 12 embedded
-cburnett pieces by Colin M.L. Burnett, pre-squashed to the 7×2 cell
-aspect, transmit-once, placed per frame) when the support probe
-answers; **glyphs** (♔♕♖♗♘♙ vs ♚♛♜♝♞♟) otherwise; **letters** with no
-color. Raw mode is global, not refcounted: lobby re-arms it every turn
-because game/watch restore cooked on exit — otherwise arrows echo as
-garbage mid-menu.
+Three tiers, worst first: **ASCII character art** by default (7×4
+stroke sets, byte-clean for layout math — works on every terminal
+ever made), **glyphs** via `CHESS_PIECES=glyphs`, **letters** via
+`CHESS_PIECES=letters` or no color. The kitty-graphics PNG experiment
+is fully removed: silent failures (blank boards) are worse than an
+honest fallback, and no terminal in reach rendered them. Raw mode is
+global, not refcounted: lobby re-arms it every turn because
+game/watch restore cooked on exit — otherwise arrows echo as garbage
+mid-menu.
+
+## Board UI
 
 `src/tui/` is a retained frontend on the same engine. Launching with
 no args opens floating palettes (play/watch/quit → color → engine),
