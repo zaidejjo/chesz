@@ -6,6 +6,7 @@
 // and should fall back to the ask flow in main.
 
 import std.str
+import std.time
 import std.vec
 
 import chess.engine.ai
@@ -103,6 +104,15 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int
             last = st.sans[len(st.sans) - 1]
         }
         out = vec.push(out, "Last: " + last + "  (" + str(len(st.played)) + " ply)")
+        cap := board_view.captured(st.pos, mode)
+        out = vec.push(out, cap[0])
+        out = vec.push(out, cap[1])
+        mv := board_view.movelist(st.sans, len(st.played), 4)
+        i := 0
+        while i < len(mv) {
+            out = vec.push(out, mv[i])
+            i = i + 1
+        }
         if len(st.hint) > 0 {
             out = vec.push(out, "Coach: " + st.hint)
         }
@@ -257,8 +267,8 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
     defer screen.exit()
     screen.hide()
     mode := screen.mode()
-    be := backend.pick(backend.term_val(), backend.prog_val(), backend.kitty_val(), backend.wt_val())
-    if be == backend.BK_UNDECIDED {
+    be := backend.detect()
+    if be == backend.BK_UNDECIDED || be == backend.BK_KITTY {
         if img.supported() {
             be = backend.BK_KITTY
         } else {
@@ -291,10 +301,16 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
             } else {
                 draw(st, eng, human_side, "thinking… (" + eng.name + " d" + str(eng.depth) + " " + str(eng.movems) + "ms)", mode)
                 m := book.probe(st.pos)
+                dt := 0 - 1
                 if m == 0 {
+                    t0 := time.now_ms()
                     m = person.best_move_for(eng, st.pos, st.hist)
+                    dt = time.now_ms() - t0
                 }
                 st = do_move(st, m)
+                if dt >= 0 {
+                    st.hint = eng.name + " " + str(dt) + "ms"
+                }
             }
         }
     }

@@ -72,7 +72,21 @@ pub func pick(term: str, prog: str, kitty_win: str, wt: str) -> int {
     BK_UNDECIDED
 }
 
+pub func gfx_override() -> str {
+    env_or("CHESS_GFX")
+}
+
+// CHESS_GFX pins the backend: png forces a probe, glyphs skips
+// images entirely. Empty/auto trusts strong env, probes the rest.
+
 pub func detect() -> int {
+    g := gfx_override()
+    if g == "glyphs" {
+        return BK_GLYPH
+    }
+    if g == "png" {
+        return BK_UNDECIDED
+    }
     pick(env_or("TERM"), env_or("TERM_PROGRAM"), env_or("KITTY_WINDOW_ID"), env_or("WT_SESSION"))
 }
 

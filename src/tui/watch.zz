@@ -40,6 +40,9 @@ func watch_panel(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mod
             last = st.sans[len(st.sans) - 1]
         }
         out = vec.push(out, "Last: " + last + "  (" + str(len(st.played)) + " ply)")
+        cap := board_view.captured(st.pos, mode)
+        out = vec.push(out, cap[0])
+        out = vec.push(out, cap[1])
     }
     out = vec.push(out, "")
     out = vec.push(out, "q quits · anything else steps")
@@ -62,8 +65,8 @@ pub func run(eng_w: person.Engine, eng_b: person.Engine) -> bool {
     defer screen.exit()
     screen.hide()
     mode := screen.mode()
-    be := backend.pick(backend.term_val(), backend.prog_val(), backend.kitty_val(), backend.wt_val())
-    if be == backend.BK_UNDECIDED {
+    be := backend.detect()
+    if be == backend.BK_UNDECIDED || be == backend.BK_KITTY {
         if img.supported() {
             be = backend.BK_KITTY
         } else {

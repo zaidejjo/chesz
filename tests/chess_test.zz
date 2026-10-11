@@ -505,3 +505,28 @@ func view_glyph_pieces() {
         .none => panic("startpos rejected")
     }
 }
+
+
+@test
+func tray_and_movelist() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            cap := board_view.captured(p, 0)
+            assert_eq(cap[0], "W takes: -")
+            assert_eq(cap[1], "B takes: -")
+        },
+        .none => panic("startpos rejected")
+    }
+    match fen.parse("rnbqkbnr/ppp1pppp/8/3P4/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1") {
+        .some(p) => {
+            cap := board_view.captured(p, 0)
+            assert_eq(cap[0], "W takes: p")
+            assert_eq(cap[1], "B takes: -")
+        },
+        .none => panic("capture FEN rejected")
+    }
+    mv := board_view.movelist(["e4", "e5", "Nf3"], 3, 2)
+    assert_eq(len(mv), 2)
+    assert_eq(mv[0], "1... e5")
+    assert_eq(mv[1], "2. Nf3")
+}
