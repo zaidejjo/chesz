@@ -266,6 +266,7 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
         }
     }
     if be == backend.BK_KITTY {
+        img.reset_graphics()
         img.transmit_all()
         img.drain_stale()
     }

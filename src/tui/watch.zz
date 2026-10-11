@@ -71,6 +71,7 @@ pub func run(eng_w: person.Engine, eng_b: person.Engine) -> bool {
         }
     }
     if be == backend.BK_KITTY {
+        img.reset_graphics()
         img.transmit_all()
         img.drain_stale()
     }

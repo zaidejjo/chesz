@@ -163,9 +163,9 @@ func transmit(id: int, chunks: [str]) {
         last := i + 1 >= len(chunks)
         if i == 0 {
             if last {
-                emit("\e_Gi={id},f=100,a=t,m=0,q=2;{chunks[i]}\e\\")
+                emit("\e_Gi={id},f=100,m=0,q=2;{chunks[i]}\e\\")
             } else {
-                emit("\e_Gi={id},f=100,a=t,m=1,q=2;{chunks[i]}\e\\")
+                emit("\e_Gi={id},f=100,m=1,q=2;{chunks[i]}\e\\")
             }
         } else {
             if last {
@@ -204,6 +204,17 @@ pub func drain_stale() {
             },
         }
     }
+}
+
+pub func reset_graphics() {
+    ids := [1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 16, 31]
+    i := 0
+    while i < len(ids) {
+        emit("\e_Ga=d,d=I,i={ids[i]}\e\\")
+        i = i + 1
+    }
+    emit("\e_Ga=d\e\\")
+    term.flush()
 }
 
 pub func clear() {
