@@ -50,7 +50,8 @@ Everything else is in `chesz --help`.
 ## Engines
 
 One search, five strengths. Weaker ones pick inside a score window
-and occasionally blunder; mates are always played.
+and occasionally blunder; mates are always played. Adaptive reads your
+ladder and plays at your level.
 
 | Engine | Elo  | Depth | Move budget |
 |--------|------|-------|-------------|
@@ -59,6 +60,7 @@ and occasionally blunder; mates are always played.
 | Club   | 1200 | 2     | 500 ms      |
 | Expert | 1600 | 3     | 1.5 s       |
 | Master | 2000 | 4     | 3 s         |
+| Adaptive | you | your band | 800 ms |
 
 Expert and Master want the native binary (`zz build -o chesz src/main.zz`
 runs ~20x the VM). Your lobby ladder starts at 800 and moves K=32 per

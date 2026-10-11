@@ -824,6 +824,14 @@ func opening_names() {
 }
 
 @test
+func adaptive_joins_roster() {
+    assert_eq(len(person.roster()), 6)
+    assert_eq(len(person.roster_names()), 6)
+    assert_eq(person.by_index(5).name, "Adaptive")
+    assert_eq(person.by_index(99).name, "Club")
+}
+
+@test
 func book_grew_past_sicilian() {
     // 1.e4 c5 2.Nf3 -> d6; French 3.Nc3; London 2...Nf6.
     match fen.parse("rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 0 1") {

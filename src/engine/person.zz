@@ -11,6 +11,7 @@ import ai
 import board
 import moves
 import rand
+import stats
 
 pub struct Engine {
     name: str,
@@ -46,12 +47,41 @@ pub func master() -> Engine {
     Engine{name: "Master", elo: 2000, depth: 4, movems: 3000, variety: 0, blunder: 0, joker: false}
 }
 
+// Adaptive: reads the lobby ladder and plays at your level — depth by
+// band, variety and blunder scaled down as you climb, so every game is
+// close without ever throwing like Joker does.
+
+pub func adaptive() -> Engine {
+    rating := stats.ladder()
+    depth := 1
+    variety := 150
+    blunder := 80
+    if rating >= 1800 {
+        depth = 4
+        variety = 0
+        blunder = 0
+    } else {
+        if rating >= 1400 {
+            depth = 3
+            variety = 25
+            blunder = 8
+        } else {
+            if rating >= 1000 {
+                depth = 2
+                variety = 60
+                blunder = 25
+            }
+        }
+    }
+    Engine{name: "Adaptive", elo: rating, depth: depth, movems: 800, variety: variety, blunder: blunder, joker: false}
+}
+
 pub func roster() -> [Engine] {
-    [joker(), novice(), club(), expert(), master()]
+    [joker(), novice(), club(), expert(), master(), adaptive()]
 }
 
 pub func roster_names() -> [str] {
-    ["Joker (~400, chaos)", "Novice (800)", "Club (1200)", "Expert (1600)", "Master (2000)"]
+    ["Joker (~400, chaos)", "Novice (800)", "Club (1200)", "Expert (1600)", "Master (2000)", "Adaptive (your level)"]
 }
 
 pub func by_index(i: int) -> Engine {
