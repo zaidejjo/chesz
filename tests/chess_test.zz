@@ -455,19 +455,16 @@ func view_promo_variants() {
 }
 
 @test
-func view_sprite_pieces() {
+func view_glyph_pieces() {
     match fen.parse(fen.startpos()) {
         .some(p) => {
             rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 3)
             assert_eq(len(rows), 19)
-            // Rank 8 back rank + rank 7 pawns carry block art.
-            assert_eq(str.contains(rows[2], "█"), true)
-            assert_eq(str.contains(rows[4], "█"), true)
-            // White pawns (rank 2) and back rank (rank 1) too.
-            assert_eq(str.contains(rows[14], "█"), true)
-            assert_eq(str.contains(rows[16], "█"), true)
-            // Empty middles stay blank (no art).
-            assert_eq(str.contains(rows[8], "█"), false)
+            assert_eq(str.contains(rows[2], "♜"), true)
+            assert_eq(str.contains(rows[2], "♚"), true)
+            assert_eq(str.contains(rows[4], "♟"), true)
+            assert_eq(str.contains(rows[14], "♙"), true)
+            assert_eq(str.contains(rows[16], "♔"), true)
         }
         .none => panic("startpos rejected")
     }

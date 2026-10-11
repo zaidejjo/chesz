@@ -69,6 +69,73 @@ pub func find_moves(legal: [int], from: int, to: int) -> [int] {
     out
 }
 
+func uni(v: int) -> str {
+    if v == 1 {
+        "♙"
+    } else {
+        if v == 2 {
+            "♘"
+        } else {
+            if v == 3 {
+                "♗"
+            } else {
+                if v == 4 {
+                    "♖"
+                } else {
+                    if v == 5 {
+                        "♕"
+                    } else {
+                        if v == 6 {
+                            "♔"
+                        } else {
+                            if v == 0 - 1 {
+                                "♟"
+                            } else {
+                                if v == 0 - 2 {
+                                    "♞"
+                                } else {
+                                    if v == 0 - 3 {
+                                        "♝"
+                                    } else {
+                                        if v == 0 - 4 {
+                                            "♜"
+                                        } else {
+                                            if v == 0 - 5 {
+                                                "♛"
+                                            } else {
+                                                if v == 0 - 6 {
+                                                    "♚"
+                                                } else {
+                                                    " "
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+func glyph_for(v: int, mode: int) -> str {
+    if mode == 0 {
+        if v == 0 {
+            " "
+        } else {
+            board.glyph(v)
+        }
+    } else {
+        uni(v)
+    }
+}
+
+// Piece ink: near-black coffee on both shades in truecolor/256 (the
+// outline-vs-filled glyphs carry the side); bright pairs on basic16.
+
 func piece_fg(v: int, text: str, mode: int) -> str {
     if mode == 0 {
         return text
@@ -199,72 +266,6 @@ func mark_bg(sq: int, text: str, cursor: int, selected: int, targets: [int], las
     inner
 }
 
-// Pixel pieces: 7x4 hand art (X = ink), rasterized to half-block
-// pairs — two art rows per cell row. Outline-vs-filled reads the side
-// in print-diagram fashion; ink color comes from piece_fg.
-
-func art_rows(pc: int) -> [str] {
-    if pc == 1 {
-        ["..XXX..", "..XXX..", "...X...", ".XXXXX."]
-    } else {
-        if pc == 2 {
-            ["..XX...", ".XXXX..", "XXXXX..", ".XXXXX."]
-        } else {
-            if pc == 3 {
-                ["...X...", "..XXX..", "...X...", ".XXXXX."]
-            } else {
-                if pc == 4 {
-                    [".X.X.X.", ".XXXXX.", "...X...", ".XXXXX."]
-                } else {
-                    if pc == 5 {
-                        [".X.X.X.", "XXXXXXX", "..XXX..", ".XXXXX."]
-                    } else {
-                        ["..X.X..", "...X...", "..XXX..", ".XXXXX."]
-                    }
-                }
-            }
-        }
-    }
-}
-
-func abs_pc(v: int) -> int {
-    if v < 0 {
-        0 - v
-    } else {
-        v
-    }
-}
-
-func art_row(v: int, sub: int) -> str {
-    if v == 0 {
-        return "       "
-    }
-    rows := art_rows(abs_pc(v))
-    top := rows[sub * 2]
-    bot := rows[sub * 2 + 1]
-    out := ""
-    c := 0
-    while c < 7 {
-        t := top[c]
-        b := bot[c]
-        if t == "X" {
-            if b == "X" {
-                out = out + "█"
-            } else {
-                out = out + "▀"
-            }
-        } else {
-            if b == "X" {
-                out = out + "▄"
-            } else {
-                out = out + " "
-            }
-        }
-        c = c + 1
-    }
-    out
-}
-
 func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, mode: int, piece_line: bool) -> str {
     head := "  │"
     if piece_line {
@@ -279,11 +280,11 @@ func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], 
     while f < 8 {
         sq := r * 8 + f
         v := p.b[sq]
-        sub := 0
+        glyph := " "
         if piece_line {
-            sub = 1
+            glyph = glyph_for(p.b[sq], mode)
         }
-        cell := piece_fg(v, art_row(v, sub), mode)
+        cell := piece_fg(v, "   " + glyph + "   ", mode)
         line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, mode)
         f = f + 1
     }
