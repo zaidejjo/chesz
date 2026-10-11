@@ -294,25 +294,25 @@ func rep_str(g: str, n: int) -> str {
 }
 
 func frame_top(mode: int) -> str {
-    t := "   ┌" + rep_str("─", 40) + "┐"
+    t := "  ┌" + rep_str("─", 56) + "┐"
     if mode == 0 {
-        "   +" + rep_str("-", 40) + "+"
+        "  +" + rep_str("-", 56) + "+"
     } else {
         colors.dim(t)
     }
 }
 
 func frame_bottom(mode: int) -> str {
-    t := "   └" + rep_str("─", 40) + "┘"
+    t := "  └" + rep_str("─", 56) + "┘"
     if mode == 0 {
-        "   +" + rep_str("-", 40) + "+"
+        "  +" + rep_str("-", 56) + "+"
     } else {
         colors.dim(t)
     }
 }
 
 func foot_row(mode: int) -> str {
-    foot := "     a    b    c    d    e    f    g    h"
+    foot := "      a      b      c      d      e      f      g      h"
     if mode == 0 {
         foot
     } else {
@@ -320,10 +320,18 @@ func foot_row(mode: int) -> str {
     }
 }
 
+func vbar(mode: int) -> str {
+    if mode == 0 {
+        "|"
+    } else {
+        colors.dim("│")
+    }
+}
+
 func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, mode: int, piece_line: bool) -> str {
     head := "  │"
     if piece_line {
-        head = rank_label(r, mode) + "│"
+        head = rank_label(r, mode) + vbar(mode)
     } else {
         if mode != 0 {
             head = "  " + colors.dim("│")
@@ -338,14 +346,14 @@ func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], 
             glyph = glyph_for(p.b[sq], mode)
         }
         v := p.b[sq]
-        cell := piece_fg(v, "  " + glyph + "  ", mode)
+        cell := piece_fg(v, "   " + glyph + "   ", mode)
         line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, mode)
         f = f + 1
     }
     if mode == 0 {
         line + "|"
     } else {
-        line + colors.dim("│")
+        line + vbar(mode)
     }
 }
 

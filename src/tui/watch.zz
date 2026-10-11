@@ -38,27 +38,8 @@ func watch_panel(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine) -> 
 func watch_draw(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mode: int) {
     rows := board_view.render(st.pos, 0 - 1, 0 - 1, [], st.last_from, st.last_to, mode)
     side := watch_panel(st, eng_w, eng_b)
-    ox := 0
-    oy := 0
-    sz := screen.size()
-    if len(sz) >= 2 {
-        if sz[0] > 76 {
-            ox = (sz[0] - 76) / 2
-        }
-        total := len(rows)
-        if len(side) > total {
-            total = len(side)
-        }
-        if sz[1] > total {
-            oy = (sz[1] - total) / 2
-        }
-    }
-    frame := board_view.compose(rows, side, ox, oy)
-    screen.clear()
-    screen.write(str.join(frame, "\r\n"))
-    screen.flush()
+    game.draw_frame(rows, side)
 }
-
 pub func run(eng_w: person.Engine, eng_b: person.Engine) -> bool {
     if !screen.is_tty() {
         return false

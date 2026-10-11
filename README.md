@@ -78,8 +78,8 @@ printf 'uci\nisready\nposition startpos\ngo depth 6\nquit\n' | /tmp/chess uci
 
 `src/tui/` is a retained frontend on the same engine. Launching with
 no args opens floating palettes (play/watch/quit → color → engine),
-then the big board: centered 5×2 lichess-brown squares with a border
-frame (truecolor, 256-color, and basic16 tiers with a plain-ASCII
+then the big board: centered 7×2 lichess-brown squares with a closed
+border frame (truecolor, 256-color, and basic16 tiers with a plain-ASCII
 fallback), real Unicode pieces (♔♕♖♗♘♙ vs ♚♛♜♝♞♟), cursor
 (arrows/hjkl), select with Enter (targets light up), promotion
 picker, coach hint (`?`), undo (`u`), resign (`q`). Checks pop

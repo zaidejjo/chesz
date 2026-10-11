@@ -385,9 +385,9 @@ func view_renders_big_plain_board() {
                 assert_eq(str.contains(rows[i], "\e"), false)
                 i = i + 1
             }
-            assert_eq(str.starts_with(rows[0], "   +"), true)
+            assert_eq(str.starts_with(rows[0], "  +"), true)
             assert_eq(str.starts_with(rows[2], "8 "), true)
-            assert_eq(str.contains(rows[18], "a    b"), true)
+            assert_eq(str.contains(rows[18], "a      b"), true)
         }
         .none => panic("startpos rejected")
     }

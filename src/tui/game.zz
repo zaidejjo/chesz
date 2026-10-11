@@ -95,29 +95,58 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str) -> [str] 
     out
 }
 
-func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int) {
-    rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode)
-    side := panel(st, eng, human_side, extra)
-    ox := 0
-    oy := 0
+pub func draw_frame(rows: [str], side: [str]) {
+    cols := 80
+    rows_n := 24
     sz := screen.size()
     if len(sz) >= 2 {
-        if sz[0] > 76 {
-            ox = (sz[0] - 76) / 2
+        cols = sz[0]
+        rows_n = sz[1]
+    }
+    frame := []
+    if cols >= 94 {
+        ox := 0
+        oy := 0
+        if cols > 92 {
+            ox = (cols - 92) / 2
         }
         total := len(rows)
         if len(side) > total {
             total = len(side)
         }
-        if sz[1] > total {
-            oy = (sz[1] - total) / 2
+        if rows_n > total {
+            oy = (rows_n - total) / 2
         }
+        frame = board_view.compose(rows, side, ox, oy)
+    } else {
+        below := rows
+        below = vec.push(below, "")
+        i := 0
+        while i < len(side) {
+            below = vec.push(below, side[i])
+            i = i + 1
+        }
+        ox := 0
+        if cols > 60 {
+            ox = (cols - 60) / 2
+        }
+        oy := 0
+        if rows_n > len(below) {
+            oy = (rows_n - len(below)) / 2
+        }
+        frame = board_view.compose(below, [], ox, oy)
     }
-    frame := board_view.compose(rows, side, ox, oy)
     screen.clear()
     screen.write(str.join(frame, "\r\n"))
     screen.flush()
 }
+
+func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int) {
+    rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode)
+    side := panel(st, eng, human_side, extra)
+    draw_frame(rows, side)
+}
+
 pub func do_move(st: Frame, m: int) -> Frame {
     st.sans = vec.push(st.sans, san.notation(st.pos, m))
     st.hist = ai.push_hist(st.hist, st.pos)
@@ -221,7 +250,7 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
                     quit = true
                 }
             } else {
-                draw(st, eng, human_side, "thinking…", mode)
+                draw(st, eng, human_side, "thinking… (" + eng.name + " depth " + str(eng.depth) + ")", mode)
                 m := book.probe(st.pos)
                 if m == 0 {
                     m = person.best_move_for(eng, st.pos, st.hist)
