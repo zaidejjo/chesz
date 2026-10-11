@@ -268,24 +268,121 @@ pub func render(p: board.Pos, cursor: int, selected: int, targets: [int], last_f
         check_king = moves.king_sq(p.b, p.side)
     }
     rows := []
+    rows = vec.push(rows, frame_top(mode))
     r := 7
     while r >= 0 {
-        line := rank_label(r, mode)
-        f := 0
-        while f < 8 {
-            sq := r * 8 + f
-            v := p.b[sq]
-            cell := piece_fg(v, " " + glyph_for(v, mode) + " ", mode)
-            line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, mode)
-            f = f + 1
-        }
-        rows = vec.push(rows, line)
+        rows = vec.push(rows, cell_row(p, r, cursor, selected, targets, last_from, last_to, check_king, mode, false))
+        rows = vec.push(rows, cell_row(p, r, cursor, selected, targets, last_from, last_to, check_king, mode, true))
         r = r - 1
     }
-    foot := "   a  b  c  d  e  f  g  h"
-    if mode != 0 {
-        foot = colors.dim(foot)
-    }
-    rows = vec.push(rows, foot)
+    rows = vec.push(rows, frame_bottom(mode))
+    rows = vec.push(rows, foot_row(mode))
     rows
+}
+
+// 5-wide cells, 2 tall: piece sits centered on the lower sub-row.
+// Border frame + labels included; 19 rows total, 44 cells wide.
+
+func rep_str(g: str, n: int) -> str {
+    s := ""
+    i := 0
+    while i < n {
+        s = s + g
+        i = i + 1
+    }
+    s
+}
+
+func frame_top(mode: int) -> str {
+    t := "   ┌" + rep_str("─", 40) + "┐"
+    if mode == 0 {
+        "   +" + rep_str("-", 40) + "+"
+    } else {
+        colors.dim(t)
+    }
+}
+
+func frame_bottom(mode: int) -> str {
+    t := "   └" + rep_str("─", 40) + "┘"
+    if mode == 0 {
+        "   +" + rep_str("-", 40) + "+"
+    } else {
+        colors.dim(t)
+    }
+}
+
+func foot_row(mode: int) -> str {
+    foot := "     a    b    c    d    e    f    g    h"
+    if mode == 0 {
+        foot
+    } else {
+        colors.dim(foot)
+    }
+}
+
+func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, mode: int, piece_line: bool) -> str {
+    head := "  │"
+    if piece_line {
+        head = rank_label(r, mode) + "│"
+    } else {
+        if mode != 0 {
+            head = "  " + colors.dim("│")
+        }
+    }
+    line := head
+    f := 0
+    while f < 8 {
+        sq := r * 8 + f
+        glyph := " "
+        if piece_line {
+            glyph = glyph_for(p.b[sq], mode)
+        }
+        v := p.b[sq]
+        cell := piece_fg(v, "  " + glyph + "  ", mode)
+        line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, mode)
+        f = f + 1
+    }
+    if mode == 0 {
+        line + "|"
+    } else {
+        line + colors.dim("│")
+    }
+}
+
+// Stack board rows beside a plain-text side panel and center the
+// block: pure math on visible widths (ANSI stripped), so highlights
+// never shift columns. ox/oy pad left/top.
+
+pub func compose(rows: [str], side: [str], ox: int, oy: int) -> [str] {
+    width := 0
+    i := 0
+    while i < len(rows) {
+        w := len(colors.strip(rows[i]))
+        if w > width {
+            width = w
+        }
+        i = i + 1
+    }
+    out := []
+    i = 0
+    while i < oy {
+        out = vec.push(out, "")
+        i = i + 1
+    }
+    pad := rep_str(" ", ox)
+    i = 0
+    while i < len(rows) || i < len(side) {
+        line := ""
+        if i < len(rows) {
+            line = rows[i] + rep_str(" ", width - len(colors.strip(rows[i])) + 2)
+        } else {
+            line = rep_str(" ", width + 2)
+        }
+        if i < len(side) {
+            line = line + side[i]
+        }
+        out = vec.push(out, pad + line)
+        i = i + 1
+    }
+    out
 }

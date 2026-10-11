@@ -1,0 +1,81 @@
+// Full-TUI entry: floating palettes from the first screen — no ask
+// menus when a terminal is present. Falls back (false) so main keeps
+// its text menu for pipes. Palettes draw over the current screen and
+// return indices; game/watch own the alternate screen themselves.
+
+import std.term
+
+import chess.engine.person
+import chess.tui.game
+import chess.tui.watch
+import toast.win
+import tui.screen
+
+// Palettes read raw bytes (Enter must arrive as 13, not cooked \n).
+
+func raw_off() {
+    match term.disable_raw() {
+        .ok(_) => term.flush()
+        .err(_) => term.flush()
+    }
+}
+
+func engine_palette() -> person.Engine {
+    opts := person.roster_names()
+    c := win.palette("Engine", opts)
+    if c < 0 || c >= len(opts) {
+        person.club()
+    } else {
+        person.by_index(c)
+    }
+}
+
+func color_palette() -> int {
+    // 1 white, -1 black, 0 cancelled.
+    c := win.palette("Play as", ["White", "Black"])
+    if c == 1 {
+        0 - 1
+    } else {
+        if c == 0 {
+            1
+        } else {
+            0
+        }
+    }
+}
+
+pub func run() -> bool {
+    if !screen.is_tty() {
+        return false
+    }
+    match term.enable_raw() {
+        .ok(_) => term.flush()
+        .err(_) => term.flush()
+    }
+    defer raw_off()
+    again := true
+    while again {
+        c := win.palette("ZZ Chess 0.2.0", ["Play vs engine", "Watch engine vs engine", "Quit"])
+        if c == 0 {
+            side := color_palette()
+            if side != 0 {
+                played := game.run(engine_palette(), side)
+                if !played {
+                    again = false
+                }
+            }
+        } else {
+            if c == 1 {
+                w := engine_palette()
+                b := engine_palette()
+                watched := watch.run(w, b)
+                if !watched {
+                    again = false
+                }
+            } else {
+                again = false
+            }
+        }
+    }
+    true
+}

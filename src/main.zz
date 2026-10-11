@@ -17,6 +17,7 @@ import chess.engine.moves
 import chess.engine.person
 import chess.engine.san
 import chess.tui.game
+import chess.tui.lobby
 import chess.uci.uci
 
 func perft(p: board.Pos, d: int) -> int {
@@ -395,7 +396,9 @@ func show_fen(fen_text: str) {
 
 func main(args: [str]) {
     if len(args) == 0 {
-        menu()
+        if !lobby.run() {
+            menu()
+        }
     } else {
         if args[0] == "perft" {
             perft_check()

@@ -69,70 +69,56 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str) -> [str] 
     out := []
     out = vec.push(out, "ZZ Chess 0.2.0")
     out = vec.push(out, eng.name + " (" + str(eng.elo) + ")")
-    out = vec.push(out, "You play " + side_name(human_side))
-    out = vec.push(out, "To move: " + side_name(st.pos.side))
-    last := "—"
-    if len(st.sans) > 0 {
-        last = st.sans[len(st.sans) - 1]
-    }
-    out = vec.push(out, "Last: " + last + "  (" + str(len(st.played)) + " ply)")
-    if len(st.hint) > 0 {
-        out = vec.push(out, "Coach: " + st.hint)
-    }
-    if len(extra) > 0 {
-        out = vec.push(out, extra)
+    res := person.result(st.pos, st.hist)
+    if res != 0 {
+        out = vec.push(out, "")
+        out = vec.push(out, person.result_line(res))
+        out = vec.push(out, "played " + str(len(st.played)) + " plies")
+    } else {
+        out = vec.push(out, "You play " + side_name(human_side))
+        out = vec.push(out, "To move: " + side_name(st.pos.side))
+        last := "—"
+        if len(st.sans) > 0 {
+            last = st.sans[len(st.sans) - 1]
+        }
+        out = vec.push(out, "Last: " + last + "  (" + str(len(st.played)) + " ply)")
+        if len(st.hint) > 0 {
+            out = vec.push(out, "Coach: " + st.hint)
+        }
+        if len(extra) > 0 {
+            out = vec.push(out, extra)
+        }
     }
     out = vec.push(out, "")
     out = vec.push(out, "arrows/hjkl move · enter select")
     out = vec.push(out, "? coach hint · u undo · q resign")
-    while len(out) < 11 {
-        out = vec.push(out, "")
-    }
     out
 }
 
 func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int) {
-    frame := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode)
-    frame = vec.push(frame, "")
-    pl := panel(st, eng, human_side, extra)
-    i := 0
-    while i < len(pl) {
-        frame = vec.push(frame, pl[i])
-        i = i + 1
-    }
-    // Center the whole block; clamp at small terminals.
+    rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode)
+    side := panel(st, eng, human_side, extra)
     ox := 0
     oy := 0
     sz := screen.size()
     if len(sz) >= 2 {
-        if sz[0] > 30 {
-            ox = (sz[0] - 30) / 2
+        if sz[0] > 76 {
+            ox = (sz[0] - 76) / 2
         }
-        if sz[1] > len(frame) {
-            oy = (sz[1] - len(frame)) / 2
+        total := len(rows)
+        if len(side) > total {
+            total = len(side)
+        }
+        if sz[1] > total {
+            oy = (sz[1] - total) / 2
         }
     }
-    pad := str.repeat(" ", ox)
-    out := ""
-    i = 0
-    while i < oy {
-        out = out + "\r\n"
-        i = i + 1
-    }
-    i = 0
-    while i < len(frame) {
-        out = out + pad + frame[i]
-        if i + 1 < len(frame) {
-            out = out + "\r\n"
-        }
-        i = i + 1
-    }
+    frame := board_view.compose(rows, side, ox, oy)
     screen.clear()
-    screen.write(out)
+    screen.write(str.join(frame, "\r\n"))
     screen.flush()
 }
-
-func do_move(st: Frame, m: int) -> Frame {
+pub func do_move(st: Frame, m: int) -> Frame {
     st.sans = vec.push(st.sans, san.notation(st.pos, m))
     st.hist = ai.push_hist(st.hist, st.pos)
     st.pos = moves.make(st.pos, m)
@@ -144,8 +130,8 @@ func do_move(st: Frame, m: int) -> Frame {
     st.targets = []
     st.hint = ""
     if moves.in_check(st.pos) && person.result(st.pos, st.hist) == 0 {
-        flashed := toast.flash("Check!", 2, 900)
-        if flashed < 0 {
+        toasted := toast.top("Check!", 2, 900)
+        if toasted < 0 {
             st.hint = "Check!"
         }
     }

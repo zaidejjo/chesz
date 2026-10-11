@@ -76,14 +76,18 @@ printf 'uci\nisready\nposition startpos\ngo depth 6\nquit\n' | /tmp/chess uci
 
 ## Board UI
 
-`src/tui/` is a retained frontend on the same engine: centered
-lichess-brown board (truecolor, 256-color, and basic16 tiers with a
-plain-ASCII fallback), real Unicode pieces (♔♕♖♗♘♙ vs ♚♛♜♝♞♟), cursor
+`src/tui/` is a retained frontend on the same engine. Launching with
+no args opens floating palettes (play/watch/quit → color → engine),
+then the big board: centered 5×2 lichess-brown squares with a border
+frame (truecolor, 256-color, and basic16 tiers with a plain-ASCII
+fallback), real Unicode pieces (♔♕♖♗♘♙ vs ♚♛♜♝♞♟), cursor
 (arrows/hjkl), select with Enter (targets light up), promotion
-picker, coach hint (`?`), undo (`u`), resign (`q`), check flashes via
-`toast`, dialogs via `toast.win`, screen ownership via `tui.screen`,
-key decoding via `tui.keys` (aliased: full `ask` entry collides —
-zaidejjo/zz#380).
+picker, coach hint (`?`), undo (`u`), resign (`q`). Checks pop
+top-right via `toast.top`; game-over and side panels never show stale
+to-move lines. Screen ownership via `tui.screen`, key decoding via
+`alias tui.keys` (full `ask` entry collides — zaidejjo/zz#380), lobby
+palettes via `toast.win`. Watch mode spectates engine vs engine with
+a quit poll between moves.
 
 ## Personalities
 
