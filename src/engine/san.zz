@@ -1,6 +1,8 @@
 // SAN display: e4, Nf3, O-O, exd8=Q+, Qxf7#. Coordinate input stays
 // the move-entry format; SAN is what humans read in the UI and PGN.
 
+import std.str
+
 import board
 import moves
 
@@ -271,4 +273,36 @@ pub func notation(p: board.Pos, mv: int) -> str {
         }
     }
     s
+}
+
+// Parse one SAN token against the legal moves (0 when illegal).
+// Exact notation match first, then a suffix-blind retry so imports
+// survive foreign check/mate marks and !? annotations.
+
+func strip_ann(t: str) -> str {
+    s := str.replace(t, "+", "")
+    s = str.replace(s, "#", "")
+    s = str.replace(s, "!", "")
+    s = str.replace(s, "?", "")
+    s
+}
+
+pub func parse_san(p: board.Pos, tok: str) -> int {
+    ms := moves.gen_legal(p)
+    i := 0
+    while i < len(ms) {
+        if notation(p, ms[i]) == tok {
+            return ms[i]
+        }
+        i = i + 1
+    }
+    t := strip_ann(tok)
+    i = 0
+    while i < len(ms) {
+        if strip_ann(notation(p, ms[i])) == t {
+            return ms[i]
+        }
+        i = i + 1
+    }
+    0
 }

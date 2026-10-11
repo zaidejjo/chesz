@@ -5,6 +5,8 @@
 // tui.dialog, and a toast.flash on check. Non-TTY callers get `false`
 // and should fall back to the ask flow in main.
 
+import std.env
+import std.fs
 import std.str
 import std.time
 import std.vec
@@ -14,6 +16,7 @@ import chesz.engine.board
 import chesz.engine.book
 import chesz.engine.eval
 import chesz.engine.moves
+import chesz.engine.pgn
 import chesz.engine.person
 import chesz.engine.san
 import chesz.tui.board_view
@@ -521,7 +524,11 @@ pub func run(eng: person.Engine, human_side: int, clock: [int]) -> bool {
     st := start_frame(human_side, clock)
     st = game_loop(st, eng, human_side, false, mode, style, src)
     screen.exit()
-    show_report(st)
+    if human_side == 1 {
+        show_report(st, "Human", eng.name)
+    } else {
+        show_report(st, eng.name, "Human")
+    }
     true
 }
 
@@ -540,7 +547,7 @@ pub func run_duo(clock: [int]) -> bool {
     st := start_frame(1, clock)
     st = game_loop(st, person.human(), 1, true, mode, style, src)
     screen.exit()
-    show_report(st)
+    show_report(st, "Human", "Human")
     true
 }
 
@@ -797,12 +804,44 @@ pub func report(st: Frame) -> [str] {
     out
 }
 
-func show_report(st: Frame) {
+func show_report(st: Frame, white: str, black: str) {
     lines := report(st)
     println("")
     i := 0
     while i < len(lines) {
         println(lines[i])
         i = i + 1
+    }
+    if len(st.played) > 0 {
+        path := save_pgn(st, white, black)
+        if len(path) > 0 {
+            println("Saved PGN: " + path)
+        } else {
+            println("(PGN save failed)")
+        }
+    }
+}
+
+func games_home() -> str {
+    match env.home_dir() {
+        .some(h) => h + "/.config/chesz/games"
+        .none => "./chesz_games"
+    }
+}
+
+// Auto-save every played game beside the config. Never overwrites
+// (millisecond filename); "" when the disk says no.
+
+func save_pgn(st: Frame, white: str, black: str) -> str {
+    dir := games_home()
+    match fs.mkdir_all(dir) {
+        .ok(_) => 0,
+        .err(_) => 0 - 1,
+    }
+    res := pgn.result_of(person.result(st.pos, st.hist), flagged(st))
+    path := dir + "/game_" + str(time.now_ms()) + ".pgn"
+    match fs.write(path, pgn.build(white, black, st.sans, res)) {
+        .ok(_) => path,
+        .err(_) => "",
     }
 }

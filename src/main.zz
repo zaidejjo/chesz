@@ -6,6 +6,7 @@
 //   d_zz run examples/chess/main.zz ai       AI vs AI, depth 2
 //   d_zz run examples/chess/main.zz play     human (white) vs AI, moves like e2e4
 
+import std.fs
 import std.time
 
 import ask
@@ -15,6 +16,7 @@ import chesz.engine.book
 import chesz.engine.fen
 import chesz.engine.moves
 import chesz.engine.person
+import chesz.engine.pgn
 import chesz.engine.san
 import chesz.tui.game
 import chesz.tui.lobby
@@ -373,6 +375,49 @@ func analyze(fen_text: str) {
     }
 }
 
+// Import a PGN file: replay its movetext, print every move, end with
+// the board and the result. Stops at the first token our notation
+// cannot name (with its move number).
+
+func import_pgn(path: str) {
+    match fs.read_to_string(path) {
+        .ok(text) => {
+            toks := pgn.tokens(text)
+            p := board.setup()
+            hist := []
+            ok := true
+            i := 0
+            while i < len(toks) && ok {
+                m := san.parse_san(p, toks[i])
+                if m == 0 {
+                    println("cannot parse move " + str(i + 1) + ": " + toks[i])
+                    ok = false
+                } else {
+                    num := i / 2 + 1
+                    if i % 2 == 0 {
+                        println(str(num) + ". " + san.notation(p, m))
+                    } else {
+                        println(str(num) + "... " + san.notation(p, m))
+                    }
+                    hist = ai.push_hist(hist, p)
+                    p = moves.make(p, m)
+                }
+                i = i + 1
+            }
+            if ok {
+                board.show(p.b)
+                st := person.result(p, hist)
+                if st == 0 {
+                    println("* unfinished (" + str(len(toks)) + " plies)")
+                } else {
+                    println(person.result_line(st))
+                }
+            }
+        },
+        .err(_) => println("cannot read " + path)
+    }
+}
+
 func show_fen(fen_text: str) {
     match fen.parse(fen_text) {
         .some(p) => {
@@ -443,5 +488,9 @@ func main(args: [str]) {
         show_fen(args[1])
         return
     }
-    println("usage: perft | ai | play | tui [white|black] | gauntlet | uci | analyze [FEN] | fen FEN")
+    if args[0] == "pgn" && len(args) > 1 {
+        import_pgn(args[1])
+        return
+    }
+    println("usage: perft | ai | play | tui [white|black] | gauntlet | uci | analyze [FEN] | fen FEN | pgn FILE")
 }

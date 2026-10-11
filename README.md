@@ -135,6 +135,13 @@ per-side accuracy (100 − 3 × win-points-dropped per move, from the
 cached eval history), each side's worst move, and the final eval line.
 Quit mid-game and the report says `unfinished` instead.
 
+Every played game auto-saves PGN to `~/.config/chesz/games/` (headers
++ movetext + result, millisecond filename, never overwritten).
+`d_zz run src/main.zz pgn FILE` imports one back: tags skipped, move
+numbers/results/NAGs/comments dropped, each token matched through SAN
+— it prints every move, then the final board and result, stopping at
+the first token it cannot name.
+
 All option picking (lobby, promotion, resign, game-over) goes through
 `src/tui/pick.zz`: centered `win.box_at` drawing plus a decoded loop
 (arrows/hjkl/home/end/enter/esc). The toast `palette`/`show` widgets

@@ -1,0 +1,109 @@
+// PGN export + import. Export writes our games (headers + movetext);
+// import tokenizes foreign files too: tags skipped, move numbers,
+// results, NAGs, brace comments and ;-comments dropped, !? stripped.
+// Replay matches tokens through san.parse_san, so anything our
+// notation cannot name stops the import with the failing move number.
+
+import std.str
+import std.vec
+
+pub func result_of(res: int, flag: int) -> str {
+    if flag == 1 {
+        "0-1"
+    } else {
+        if flag == 2 {
+            "1-0"
+        } else {
+            if res == 1 {
+                "1-0"
+            } else {
+                if res == 2 {
+                    "0-1"
+                } else {
+                    if res == 0 {
+                        "*"
+                    } else {
+                        "1/2-1/2"
+                    }
+                }
+            }
+        }
+    }
+}
+
+func movetext(sans: [str]) -> str {
+    out := ""
+    i := 0
+    while i < len(sans) {
+        if i % 2 == 0 {
+            if i > 0 {
+                out = out + " "
+            }
+            out = out + str(i / 2 + 1) + ". " + sans[i]
+        } else {
+            out = out + " " + sans[i]
+        }
+        i = i + 1
+    }
+    out
+}
+
+pub func build(white: str, black: str, sans: [str], result: str) -> str {
+    "[Event \"chesz game\"]\n[Site \"local\"]\n[White \"" + white + "\"]\n[Black \"" + black + "\"]\n[Result \"" + result + "\"]\n\n" + movetext(sans) + " " + result + "\n"
+}
+
+func keep_tok(t: str) -> bool {
+    if t == "" {
+        return false
+    }
+    if str.ends_with(t, ".") {
+        return false
+    }
+    if t == "1-0" || t == "0-1" || t == "1/2-1/2" || t == "*" {
+        return false
+    }
+    if str.starts_with(t, "$") {
+        return false
+    }
+    if str.starts_with(t, "{") || str.ends_with(t, "}") {
+        return false
+    }
+    if str.starts_with(t, ";") {
+        return false
+    }
+    true
+}
+
+func clean_tok(t: str) -> str {
+    s := str.replace(t, "!", "")
+    str.replace(s, "?", "")
+}
+
+pub func tokens(text: str) -> [str] {
+    out := []
+    lines := str.split(text, "\n")
+    li := 0
+    while li < len(lines) {
+        if !str.starts_with(lines[li], "[") {
+            parts := str.split(lines[li], " ")
+            pi := 0
+            while pi < len(parts) {
+                t := parts[pi]
+                if str.starts_with(t, "{") && !str.ends_with(t, "}") {
+                    // Multi-word brace comment: skip through its end.
+                    pi = pi + 1
+                    while pi < len(parts) && !str.ends_with(parts[pi], "}") {
+                        pi = pi + 1
+                    }
+                } else {
+                    if keep_tok(t) {
+                        out = vec.push(out, clean_tok(t))
+                    }
+                }
+                pi = pi + 1
+            }
+        }
+        li = li + 1
+    }
+    out
+}
