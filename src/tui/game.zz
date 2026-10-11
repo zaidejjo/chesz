@@ -1,11 +1,11 @@
-// Retained board UI: owns the screen, dispatches single keys, floats
-// panels over the position. Engine-only game logic (person.result,
-// book, search); presentation via tui.screen/keys/menu/dialog and a
-// toast.flash on check. Non-TTY callers get `false` and should fall
-// back to the ask flow in main.
+// Retained board UI: owns the screen, dispatches single keys, stacks
+// a status panel under the position. Engine-only game logic
+// (person.result, book, search); presentation via tui.screen,
+// tui.keys (aliased — ask ships its own keys.zz), tui.menu,
+// tui.dialog, and a toast.flash on check. Non-TTY callers get `false`
+// and should fall back to the ask flow in main.
 
 import std.str
-import std.term
 import std.vec
 
 import chess.engine.ai
@@ -17,55 +17,8 @@ import chess.engine.san
 import chess.tui.board_view
 import toast.toast
 import toast.win
+import tui.keys as tkeys
 import tui.screen
-
-// Local key decoder (arrows 1000-1003, the tui/ask numbering): tui.keys
-// cannot load here — ask ships its own keys.zz under the same namespace
-// and the two collide (upstream). term.poll keeps lone ESC instant.
-
-func raw_byte() -> int {
-    match term.read_key() {
-        .ok(k) => k
-        .err(_) => 0 - 1
-    }
-}
-
-func read_seq() -> int {
-    b2 := raw_byte()
-    if b2 != 91 {
-        return 27
-    }
-    b3 := raw_byte()
-    if b3 == 65 {
-        return 1002
-    }
-    if b3 == 66 {
-        return 1003
-    }
-    if b3 == 67 {
-        return 1001
-    }
-    if b3 == 68 {
-        return 1000
-    }
-    27
-}
-
-func read_key() -> int {
-    b := raw_byte()
-    if b != 27 {
-        return b
-    }
-    match term.poll(50) {
-        .ok(v) => {
-            if v {
-                return read_seq()
-            }
-            27
-        }
-        .err(_) => 27
-    }
-}
 
 pub struct Frame {
     pos: board.Pos,
@@ -138,11 +91,44 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str) -> [str] 
     out
 }
 
-func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, color: bool) {
-    rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, color)
-    frame := win.overlay(rows, panel(st, eng, human_side, extra), 30, 0)
-    screen.goto(0, 0)
-    screen.write(str.join(frame, "\r\n"))
+func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int) {
+    frame := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode)
+    frame = vec.push(frame, "")
+    pl := panel(st, eng, human_side, extra)
+    i := 0
+    while i < len(pl) {
+        frame = vec.push(frame, pl[i])
+        i = i + 1
+    }
+    // Center the whole block; clamp at small terminals.
+    ox := 0
+    oy := 0
+    sz := screen.size()
+    if len(sz) >= 2 {
+        if sz[0] > 30 {
+            ox = (sz[0] - 30) / 2
+        }
+        if sz[1] > len(frame) {
+            oy = (sz[1] - len(frame)) / 2
+        }
+    }
+    pad := str.repeat(" ", ox)
+    out := ""
+    i = 0
+    while i < oy {
+        out = out + "\r\n"
+        i = i + 1
+    }
+    i = 0
+    while i < len(frame) {
+        out = out + pad + frame[i]
+        if i + 1 < len(frame) {
+            out = out + "\r\n"
+        }
+        i = i + 1
+    }
+    screen.clear()
+    screen.write(out)
     screen.flush()
 }
 
@@ -201,10 +187,10 @@ func pick_promo(legal: [int], from: int, to: int) -> int {
 }
 
 func key_dx(k: int) -> int {
-    if k == 1000 || k == 104 {
+    if k == tkeys.left() || k == 104 {
         0 - 1
     } else {
-        if k == 1001 || k == 108 {
+        if k == tkeys.right() || k == 108 {
             1
         } else {
             0
@@ -213,10 +199,10 @@ func key_dx(k: int) -> int {
 }
 
 func key_dy(k: int) -> int {
-    if k == 1002 || k == 107 {
+    if k == tkeys.up() || k == 107 {
         1
     } else {
-        if k == 1003 || k == 106 {
+        if k == tkeys.down() || k == 106 {
             0 - 1
         } else {
             0
@@ -232,23 +218,24 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
         return false
     }
     defer screen.exit()
-    color := screen.mode() > 0
+    screen.hide()
+    mode := screen.mode()
     st := fresh_frame(human_side)
     quit := false
     while !quit {
         res := person.result(st.pos, st.hist)
         if res != 0 {
-            draw(st, eng, human_side, person.result_line(res), color)
+            draw(st, eng, human_side, person.result_line(res), mode)
             win.show(person.result_line(res), ["played " + str(len(st.played)) + " plies vs " + eng.name], ["OK"])
             quit = true
         } else {
             if st.pos.side == human_side {
-                st = human_frame(st, eng, human_side, color)
+                st = human_frame(st, eng, human_side, mode)
                 if st.cursor == 0 - 1000 {
                     quit = true
                 }
             } else {
-                draw(st, eng, human_side, "thinking…", color)
+                draw(st, eng, human_side, "thinking…", mode)
                 m := book.probe(st.pos)
                 if m == 0 {
                     m = person.best_move_for(eng, st.pos, st.hist)
@@ -263,12 +250,12 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
 // One human turn: cursor loop until a move is made. Returns the frame;
 // cursor -1000 signals quit-to-menu (checked by run()).
 
-func human_frame(st: Frame, eng: person.Engine, human_side: int, color: bool) -> Frame {
+func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int) -> Frame {
     done := false
     while !done {
-        draw(st, eng, human_side, "", color)
-        k := read_key()
-        if k == 0 - 1 || k == 3 {
+        draw(st, eng, human_side, "", mode)
+        k := tkeys.read()
+        if k == tkeys.eof() || k == tkeys.ctrl_c() {
             st.cursor = 0 - 1000
             done = true
         } else {
@@ -278,14 +265,14 @@ func human_frame(st: Frame, eng: person.Engine, human_side: int, color: bool) ->
                     done = true
                 }
             } else {
-                if k == 27 {
+                if k == tkeys.esc() {
                     st.selected = 0 - 1
                     st.targets = []
                 } else {
-                    if k == 104 || k == 106 || k == 107 || k == 108 || k == 1002 || k == 1003 || k == 1000 || k == 1001 {
+                    if k == 104 || k == 106 || k == 107 || k == 108 || k == tkeys.up() || k == tkeys.down() || k == tkeys.left() || k == tkeys.right() {
                         st.cursor = board_view.step_cursor(st.cursor, key_dx(k), key_dy(k))
                     } else {
-                        if k == 13 || k == 32 {
+                        if k == tkeys.enter() || k == 32 {
                             st = press(st, human_side)
                             if st.selected == 0 - 2 {
                                 st.selected = 0 - 1

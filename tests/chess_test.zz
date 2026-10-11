@@ -375,7 +375,7 @@ func loud_matches_pseudo() {
 func view_renders_nine_plain_rows() {
     match fen.parse(fen.startpos()) {
         .some(p) => {
-            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, false)
+            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 0)
             assert_eq(len(rows), 9)
             i := 0
             while i < len(rows) {
@@ -419,5 +419,23 @@ func view_promo_variants() {
             assert_eq(len(opts), 4)
         }
         .none => panic("promo FEN rejected")
+    }
+}
+
+@test
+func view_unicode_pieces() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 3)
+            assert_eq(len(rows), 9)
+            // Rank 8 back rank: black outline set; rank 7: black pawns.
+            assert_eq(str.contains(rows[0], "♜"), true)
+            assert_eq(str.contains(rows[0], "♚"), true)
+            assert_eq(str.contains(rows[1], "♟"), true)
+            // Rank 2/1: white pawns + white back rank.
+            assert_eq(str.contains(rows[6], "♙"), true)
+            assert_eq(str.contains(rows[7], "♔"), true)
+        }
+        .none => panic("startpos rejected")
     }
 }

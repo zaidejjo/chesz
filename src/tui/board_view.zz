@@ -69,9 +69,82 @@ pub func find_moves(legal: [int], from: int, to: int) -> [int] {
     out
 }
 
-func piece_fg(v: int, text: str, color: bool) -> str {
-    if !color {
+func uni(v: int) -> str {
+    if v == 1 {
+        "♙"
+    } else {
+        if v == 2 {
+            "♘"
+        } else {
+            if v == 3 {
+                "♗"
+            } else {
+                if v == 4 {
+                    "♖"
+                } else {
+                    if v == 5 {
+                        "♕"
+                    } else {
+                        if v == 6 {
+                            "♔"
+                        } else {
+                            if v == 0 - 1 {
+                                "♟"
+                            } else {
+                                if v == 0 - 2 {
+                                    "♞"
+                                } else {
+                                    if v == 0 - 3 {
+                                        "♝"
+                                    } else {
+                                        if v == 0 - 4 {
+                                            "♜"
+                                        } else {
+                                            if v == 0 - 5 {
+                                                "♛"
+                                            } else {
+                                                if v == 0 - 6 {
+                                                    "♚"
+                                                } else {
+                                                    " "
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+func glyph_for(v: int, mode: int) -> str {
+    if mode == 0 {
+        if v == 0 {
+            " "
+        } else {
+            board.glyph(v)
+        }
+    } else {
+        uni(v)
+    }
+}
+
+// Piece ink: near-black coffee on both shades in truecolor/256 (the
+// outline-vs-filled glyphs carry the side); bright pairs on basic16.
+
+func piece_fg(v: int, text: str, mode: int) -> str {
+    if mode == 0 {
         return text
+    }
+    if mode >= 3 {
+        return colors.bold(colors.rgb(text, 40, 25, 15))
+    }
+    if mode == 2 {
+        return colors.bold(colors.color256(text, 232))
     }
     if v > 0 {
         colors.bright_white(text)
@@ -84,21 +157,73 @@ func piece_fg(v: int, text: str, color: bool) -> str {
     }
 }
 
-func shade(sq: int, text: str, color: bool) -> str {
-    if !color {
-        return text
+// Lichess-brown squares: tan/dark in truecolor, closest 256-cell
+// indices below that, named buckets on basic16.
+
+func shade(sq: int, text: str, mode: int) -> str {
+    if mode >= 3 {
+        if (board.file_of(sq) + board.rank_of(sq)) % 2 == 0 {
+            return colors.bg_rgb(text, 181, 136, 99)
+        }
+        return colors.bg_rgb(text, 240, 217, 181)
     }
-    f := board.file_of(sq)
-    r := board.rank_of(sq)
-    if (f + r) % 2 == 0 {
-        colors.bg_black(text)
-    } else {
-        colors.bg_bright_black(text)
+    if mode == 2 {
+        if (board.file_of(sq) + board.rank_of(sq)) % 2 == 0 {
+            return colors.bg_256(text, 137)
+        }
+        return colors.bg_256(text, 223)
     }
+    if mode == 1 {
+        f := board.file_of(sq)
+        r := board.rank_of(sq)
+        if (f + r) % 2 == 0 {
+            return colors.bg_black(text)
+        }
+        return colors.bg_bright_black(text)
+    }
+    text
 }
 
-func mark_bg(sq: int, text: str, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, color: bool) -> str {
-    if !color {
+func hi_bg(text: str, kind: int, mode: int) -> str {
+    // kind: 0 check, 1 selected, 2 target, 3 last-move.
+    if mode >= 3 {
+        if kind == 0 {
+            return colors.bg_rgb(text, 220, 60, 60)
+        }
+        if kind == 1 {
+            return colors.bg_rgb(text, 250, 200, 60)
+        }
+        if kind == 2 {
+            return colors.bg_rgb(text, 110, 190, 110)
+        }
+        return colors.bg_rgb(text, 205, 210, 106)
+    }
+    if mode == 2 {
+        if kind == 0 {
+            return colors.bg_256(text, 196)
+        }
+        if kind == 1 {
+            return colors.bg_256(text, 220)
+        }
+        if kind == 2 {
+            return colors.bg_256(text, 114)
+        }
+        return colors.bg_256(text, 186)
+    }
+    if kind == 0 {
+        return colors.bg_red(text)
+    }
+    if kind == 1 {
+        return colors.bg_yellow(text)
+    }
+    if kind == 2 {
+        return colors.bg_green(text)
+    }
+    colors.bg_cyan(text)
+}
+
+func mark_bg(sq: int, text: str, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, mode: int) -> str {
+    if mode == 0 {
         if sq == cursor {
             return "[" + text + "]"
         }
@@ -106,18 +231,18 @@ func mark_bg(sq: int, text: str, cursor: int, selected: int, targets: [int], las
     }
     inner := text
     if sq == check_king {
-        inner = colors.bg_red(text)
+        inner = hi_bg(text, 0, mode)
     } else {
         if sq == selected {
-            inner = colors.bg_yellow(text)
+            inner = hi_bg(text, 1, mode)
         } else {
             if has_sq(targets, sq) {
-                inner = colors.bg_green(text)
+                inner = hi_bg(text, 2, mode)
             } else {
                 if sq == last_from || sq == last_to {
-                    inner = colors.bg_cyan(text)
+                    inner = hi_bg(text, 3, mode)
                 } else {
-                    inner = shade(sq, text, true)
+                    inner = shade(sq, text, mode)
                 }
             }
         }
@@ -128,7 +253,16 @@ func mark_bg(sq: int, text: str, cursor: int, selected: int, targets: [int], las
     inner
 }
 
-pub func render(p: board.Pos, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, color: bool) -> [str] {
+func rank_label(r: int, mode: int) -> str {
+    t := str(r + 1) + " "
+    if mode == 0 {
+        t
+    } else {
+        colors.dim(t)
+    }
+}
+
+pub func render(p: board.Pos, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, mode: int) -> [str] {
     check_king := 0 - 1
     if moves.in_check(p) {
         check_king = moves.king_sq(p.b, p.side)
@@ -136,22 +270,22 @@ pub func render(p: board.Pos, cursor: int, selected: int, targets: [int], last_f
     rows := []
     r := 7
     while r >= 0 {
-        line := str(r + 1) + " "
+        line := rank_label(r, mode)
         f := 0
         while f < 8 {
             sq := r * 8 + f
             v := p.b[sq]
-            glyph := board.glyph(v)
-            if v == 0 {
-                glyph = " "
-            }
-            cell := piece_fg(v, " " + glyph + " ", color)
-            line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, color)
+            cell := piece_fg(v, " " + glyph_for(v, mode) + " ", mode)
+            line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, mode)
             f = f + 1
         }
         rows = vec.push(rows, line)
         r = r - 1
     }
-    rows = vec.push(rows, "   a  b  c  d  e  f  g  h")
+    foot := "   a  b  c  d  e  f  g  h"
+    if mode != 0 {
+        foot = colors.dim(foot)
+    }
+    rows = vec.push(rows, foot)
     rows
 }
