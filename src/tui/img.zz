@@ -206,6 +206,47 @@ pub func drain_stale() {
     }
 }
 
+func show_reply(tag: str) -> str {
+    r := read_reply(400)
+    clean := str.replace(r, chr(27), "<ESC>")
+    tag + "=" + clean
+}
+
+// Self-test: transmit id 99 WITH responses, place it top-left,
+// report the terminal's own verdicts, clean up after.
+
+pub func imgtest() -> [str] {
+    out := []
+    cs := pieces.png_wP()
+    i := 0
+    while i < len(cs) {
+        last := i + 1 >= len(cs)
+        if i == 0 {
+            if last {
+                emit("\e_Gi=99,f=100,m=0;{cs[i]}\e\\")
+            } else {
+                emit("\e_Gi=99,f=100,m=1;{cs[i]}\e\\")
+            }
+        } else {
+            if last {
+                emit("\e_Gm=0;{cs[i]}\e\\")
+            } else {
+                emit("\e_Gm=1;{cs[i]}\e\\")
+            }
+        }
+        i = i + 1
+    }
+    term.flush()
+    out = vec.push(out, show_reply("transmit"))
+    screen.goto(0, 0)
+    emit("\e_Ga=p,i=99,c=7,r=2\e\\")
+    term.flush()
+    out = vec.push(out, show_reply("place"))
+    emit("\e_Ga=d,d=I,i=99\e\\")
+    term.flush()
+    out
+}
+
 pub func reset_graphics() {
     ids := [1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 16, 31]
     i := 0

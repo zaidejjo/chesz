@@ -374,6 +374,15 @@ func analyze(fen_text: str) {
     }
 }
 
+func imgtest() {
+    lines := img.imgtest()
+    i := 0
+    while i < len(lines) {
+        println(lines[i])
+        i = i + 1
+    }
+}
+
 func gfxdiag() {
     lines := img.diagnose()
     i := 0
@@ -441,14 +450,18 @@ func main(args: [str]) {
                                         play_human(person.club(), human)
                                     }
                                 } else {
+                                    if args[0] == "imgtest" {
+                                    imgtest()
+                                } else {
                                     if args[0] == "gfxdiag" {
                                     gfxdiag()
                                 } else {
                                     if args[0] == "fen" && len(args) > 1 {
                                         show_fen(args[1])
                                     } else {
-                                        println("usage: perft | ai | play | tui [white|black] | gauntlet | uci | analyze [FEN] | fen \"<FEN>\" | gfxdiag")
+                                        println("usage: perft | ai | play | tui [white|black] | gauntlet | uci | analyze [FEN] | fen \"<FEN>\" | gfxdiag | imgtest")
                                     }
+                                }
                                 }
                                 }
                             }
