@@ -38,6 +38,11 @@ pub struct Frame {
     bar_cp: int,
     bar_pct: int,
     bar_mate: int,
+    wms: int,
+    bms: int,
+    inc: int,
+    turn_ms: int,
+    evals: [int],
 }
 
 func fresh_frame(human_side: int) -> Frame {
@@ -45,11 +50,11 @@ func fresh_frame(human_side: int) -> Frame {
     if human_side == 0 - 1 {
         cur = 52
     }
-    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0}
+    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
 }
 
 func replay(played: [int]) -> Frame {
-    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0}
+    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
     i := 0
     while i < len(played) {
         st.sans = vec.push(st.sans, san.notation(st.pos, played[i]))
@@ -164,7 +169,15 @@ func gfx_line(style: int, src: str) -> str {
 func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int, style: int, src: str) -> [str] {
     out := []
     out = vec.push(out, "ZZ Chess 0.2.0")
-    out = vec.push(out, eng.name + " (" + str(eng.elo) + ")")
+    if eng.elo == 0 {
+        out = vec.push(out, eng.name)
+    } else {
+        out = vec.push(out, eng.name + " (" + str(eng.elo) + ")")
+    }
+    cl := clock_line(st)
+    if len(cl) > 0 {
+        out = vec.push(out, cl)
+    }
     out = vec.push(out, gfx_line(style, src))
     if st.show_bar {
         out = vec.push(out, board_view.eval_line(st.bar_cp, st.bar_pct, st.bar_mate))
@@ -274,8 +287,98 @@ pub func do_move(st: Frame, m: int) -> Frame {
             st.hint = "Check!"
         }
     }
+    st = tick_clock(st)
     st = refresh_bar(st)
+    st.evals = vec.push(st.evals, st.bar_cp)
     st
+}
+
+// Clock deduct: the mover pays the elapsed think plus gains the
+// increment. No live ticking — the blocking key reader cannot redraw
+// mid-thought — so time settles when the move lands.
+
+func tick_clock(st: Frame) -> Frame {
+    if st.wms < 0 {
+        return st
+    }
+    if st.turn_ms > 0 {
+        el := time.now_ms() - st.turn_ms
+        if el < 0 {
+            el = 0
+        }
+        if st.pos.side == 1 {
+            st.wms = st.wms - el
+        } else {
+            st.bms = st.bms - el
+        }
+        if st.wms < 0 {
+            st.wms = 0
+        }
+        if st.bms < 0 {
+            st.bms = 0
+        }
+    }
+    if st.pos.side == 1 {
+        st.wms = st.wms + st.inc
+    } else {
+        st.bms = st.bms + st.inc
+    }
+    st.turn_ms = time.now_ms()
+    st
+}
+
+pub func fmt_ms(ms: int) -> str {
+    t := ms
+    if t < 0 {
+        t = 0
+    }
+    sec := t / 1000
+    m := sec / 60
+    r := sec % 60
+    tail := str(r)
+    if r < 10 {
+        tail = "0" + tail
+    }
+    str(m) + ":" + tail
+}
+
+pub func clock_line(st: Frame) -> str {
+    if st.wms < 0 {
+        ""
+    } else {
+        line := "Clock: W " + fmt_ms(st.wms) + " · B " + fmt_ms(st.bms)
+        if st.inc > 0 {
+            line = line + " (+" + str(st.inc / 1000) + ")"
+        }
+        line
+    }
+}
+
+// 0 none, 1 white flagged, 2 black flagged.
+
+pub func flagged(st: Frame) -> int {
+    if st.wms < 0 {
+        return 0
+    }
+    if st.wms <= 0 {
+        return 1
+    }
+    if st.bms <= 0 {
+        return 2
+    }
+    0
+}
+
+func flag_line(f: int) -> str {
+    if f == 1 {
+        "0-1 Black wins on time"
+    } else {
+        if f == 2 {
+            "1-0 White wins on time"
+        } else {
+            ""
+        }
+    }
 }
 
 func pick_promo(legal: [int], from: int, to: int) -> int {
@@ -336,36 +439,35 @@ func key_dy(k: int) -> int {
     }
 }
 
-pub func run(eng: person.Engine, human_side: int) -> bool {
-    if !screen.is_tty() {
-        return false
-    }
-    if !screen.enter() {
-        return false
-    }
-    defer screen.exit()
-    screen.hide()
-    mode := screen.mode()
-    board_view.ensure_config()
-    style := board_view.resolve_style()
-    src := board_view.style_source()
-    st := fresh_frame(human_side)
-    st = refresh_bar(st)
+// Shared loop: engine games (duo=false, one human side) and hotseat
+// (duo=true, both sides human). Returns the final frame; cursor
+// -1000 means quit-to-menu mid-game.
+
+func game_loop(st: Frame, eng: person.Engine, human_side: int, duo: bool, mode: int, style: int, src: str) -> Frame {
     quit := false
     while !quit {
+        hs := human_side
+        if duo {
+            hs = st.pos.side
+        }
+        fl := flagged(st)
         res := person.result(st.pos, st.hist)
-        if res != 0 {
-            draw(st, eng, human_side, person.result_line(res), mode, style, src)
-            pick.pick(person.result_line(res), ["OK"])
+        if fl != 0 || res != 0 {
+            line := flag_line(fl)
+            if fl == 0 {
+                line = person.result_line(res)
+            }
+            draw(st, eng, hs, line, mode, style, src)
+            pick.pick(line, ["OK"])
             quit = true
         } else {
-            if st.pos.side == human_side {
-                st = human_frame(st, eng, human_side, mode, style, src)
+            if duo || st.pos.side == human_side {
+                st = human_frame(st, eng, hs, mode, style, src, duo)
                 if st.cursor == 0 - 1000 {
                     quit = true
                 }
             } else {
-                draw(st, eng, human_side, "thinking… (" + eng.name + " d" + str(eng.depth) + " " + str(eng.movems) + "ms)", mode, style, src)
+                draw(st, eng, hs, "thinking… (" + eng.name + " d" + str(eng.depth) + " " + str(eng.movems) + "ms)", mode, style, src)
                 m := book.probe(st.pos)
                 dt := 0 - 1
                 if m == 0 {
@@ -383,13 +485,69 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
             }
         }
     }
+    st
+}
+
+func with_clock(st: Frame, clock: [int]) -> Frame {
+    st.wms = clock[0]
+    st.bms = clock[1]
+    st.inc = clock[2]
+    st
+}
+
+func start_frame(human_side: int, clock: [int]) -> Frame {
+    st := fresh_frame(human_side)
+    st = with_clock(st, clock)
+    st = refresh_bar(st)
+    st.evals = [st.bar_cp]
+    st.turn_ms = time.now_ms()
+    st
+}
+
+pub func run(eng: person.Engine, human_side: int, clock: [int]) -> bool {
+    if !screen.is_tty() {
+        return false
+    }
+    if !screen.enter() {
+        return false
+    }
+    // Explicit exit (no defer): the report prints to a cooked terminal
+    // below, after the alternate screen is gone.
+    screen.hide()
+    mode := screen.mode()
+    board_view.ensure_config()
+    style := board_view.resolve_style()
+    src := board_view.style_source()
+    st := start_frame(human_side, clock)
+    st = game_loop(st, eng, human_side, false, mode, style, src)
+    screen.exit()
+    show_report(st)
+    true
+}
+
+pub func run_duo(clock: [int]) -> bool {
+    if !screen.is_tty() {
+        return false
+    }
+    if !screen.enter() {
+        return false
+    }
+    screen.hide()
+    mode := screen.mode()
+    board_view.ensure_config()
+    style := board_view.resolve_style()
+    src := board_view.style_source()
+    st := start_frame(1, clock)
+    st = game_loop(st, person.human(), 1, true, mode, style, src)
+    screen.exit()
+    show_report(st)
     true
 }
 
 // One human turn: cursor loop until a move is made. Returns the frame;
 // cursor -1000 signals quit-to-menu (checked by run()).
 
-func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, style: int, src: str) -> Frame {
+func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, style: int, src: str, duo: bool) -> Frame {
     done := false
     while !done {
         draw(st, eng, human_side, "", mode, style, src)
@@ -422,7 +580,11 @@ func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, styl
                                 st.hint = hint_for(st)
                             } else {
                                 if k == 117 {
-                                    st = undo(st, human_side)
+                                    if duo {
+                                        st = undo_n(st, human_side, 1)
+                                    } else {
+                                        st = undo(st, human_side)
+                                    }
                                 } else {
                                     if k == 101 {
                                         st.show_bar = !st.show_bar
@@ -482,12 +644,23 @@ func slice_moves(played: [int], n: int) -> [int] {
 }
 
 func undo(st: Frame, human_side: int) -> Frame {
-    if st.pos.side != human_side || len(st.played) < 2 {
+    undo_n(st, human_side, 2)
+}
+
+func undo_n(st: Frame, human_side: int, n: int) -> Frame {
+    if st.pos.side != human_side || len(st.played) < n {
         return st
     }
-    st2 := replay(slice_moves(st.played, len(st.played) - 2))
+    st2 := replay(slice_moves(st.played, len(st.played) - n))
     st2.cursor = st.cursor
     st2.show_bar = st.show_bar
+    // Eval history runs parallel to played (+1 seed): drop the same tail
+    // so the report never reads a removed position.
+    st2.evals = slice_moves(st.evals, len(st.evals) - n)
+    st2.wms = st.wms
+    st2.bms = st.bms
+    st2.inc = st.inc
+    st2.turn_ms = time.now_ms()
     st2
 }
 
@@ -497,5 +670,139 @@ func hint_for(st: Frame) -> str {
         ""
     } else {
         san.notation(st.pos, m)
+    }
+}
+
+// Post-game report: result, per-side accuracy from the cached eval
+// history, and each side's worst move. Accuracy is chess.com-flavored
+// without floats: every move scores 100 - 3 * win%-points-dropped
+// (mover perspective, clamped), averaged.
+
+func move_no(ply: int) -> str {
+    num := ply / 2 + 1
+    if ply % 2 == 0 {
+        str(num) + ". "
+    } else {
+        str(num) + "... "
+    }
+}
+
+// [accuracy, moves, worst_ply, worst_loss] for one side. evals[i] is
+// the cached white-cp after i plies (seed + one per move).
+
+func acc_of(evals: [int], side: int) -> [int] {
+    tot := 0
+    n := 0
+    wl := 0 - 1
+    wp := 0 - 1
+    i := 0
+    while i + 1 < len(evals) {
+        mover := 1
+        if i % 2 == 1 {
+            mover = 0 - 1
+        }
+        if mover == side {
+            b := eval.win_pct(evals[i])
+            a := eval.win_pct(evals[i + 1])
+            mb := b
+            ma := a
+            if mover == 0 - 1 {
+                mb = 100 - b
+                ma = 100 - a
+            }
+            loss := mb - ma
+            if loss < 0 {
+                loss = 0
+            }
+            if loss > 100 {
+                loss = 100
+            }
+            sc := 100 - loss * 3
+            if sc < 0 {
+                sc = 0
+            }
+            tot = tot + sc
+            n = n + 1
+            if wl < 0 || loss > wl {
+                wl = loss
+                wp = i
+            }
+        }
+        i = i + 1
+    }
+    acc := 100
+    if n > 0 {
+        acc = tot / n
+    }
+    [acc, n, wp, wl]
+}
+
+func acc_line(name: str, r: [int]) -> str {
+    if r[1] == 0 {
+        name + " accuracy — (no moves)"
+    } else {
+        unit := " moves"
+        if r[1] == 1 {
+            unit = " move"
+        }
+        name + " accuracy " + str(r[0]) + "% over " + str(r[1]) + unit
+    }
+}
+
+func worst_line(name: str, r: [int], sans: [str]) -> str {
+    if r[1] == 0 || r[2] < 0 || r[2] >= len(sans) {
+        ""
+    } else {
+        name + " worst: " + move_no(r[2]) + sans[r[2]] + " (-" + str(r[3]) + "%)"
+    }
+}
+
+pub func result_str(st: Frame) -> str {
+    fl := flagged(st)
+    if fl == 1 {
+        "0-1 Black wins on time"
+    } else {
+        if fl == 2 {
+            "1-0 White wins on time"
+        } else {
+            res := person.result(st.pos, st.hist)
+            if res == 0 {
+                "unfinished"
+            } else {
+                person.result_line(res)
+            }
+        }
+    }
+}
+
+pub func report(st: Frame) -> [str] {
+    out := []
+    out = vec.push(out, "Chesz report — " + result_str(st))
+    out = vec.push(out, "Moves played: " + str(len(st.played)))
+    w := acc_of(st.evals, 1)
+    b := acc_of(st.evals, 0 - 1)
+    out = vec.push(out, acc_line("White", w))
+    out = vec.push(out, acc_line("Black", b))
+    line := worst_line("White", w, st.sans)
+    if len(line) > 0 {
+        out = vec.push(out, line)
+    }
+    line = worst_line("Black", b, st.sans)
+    if len(line) > 0 {
+        out = vec.push(out, line)
+    }
+    if len(st.played) > 0 {
+        out = vec.push(out, board_view.eval_line(st.bar_cp, st.bar_pct, st.bar_mate))
+    }
+    out
+}
+
+func show_report(st: Frame) {
+    lines := report(st)
+    println("")
+    i := 0
+    while i < len(lines) {
+        println(lines[i])
+        i = i + 1
     }
 }

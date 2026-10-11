@@ -12,6 +12,7 @@ import chesz.engine.person
 import chesz.engine.san
 import chesz.main
 import chesz.tui.board_view
+import chesz.tui.game
 import chesz.tui.pick
 import chesz.uci.uci
 import tui.keys as tkeys
@@ -568,6 +569,44 @@ func eval_bar_math() {
         }
         .none => panic("startpos rejected")
     }
+}
+
+@test
+func clock_format() {
+    assert_eq(game.fmt_ms(300000), "5:00")
+    assert_eq(game.fmt_ms(61000), "1:01")
+    assert_eq(game.fmt_ms(9000), "0:09")
+    assert_eq(game.fmt_ms(0), "0:00")
+}
+
+func report_frame(evals: [int], sans: [str], played: [int], wms: int) -> game.Frame {
+    st := game.Frame{pos: board.setup(), hist: [], sans: sans, played: played, cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: wms, bms: 60000, inc: 0, turn_ms: 0, evals: evals}
+    st
+}
+
+@test
+func report_stable_game() {
+    st := report_frame([0, 0, 0], ["e4", "e5"], [101, 102], 0 - 1)
+    lines := game.report(st)
+    assert_eq(lines[0], "Chesz report — unfinished")
+    assert_eq(lines[1], "Moves played: 2")
+    assert_eq(lines[2], "White accuracy 100% over 1 move")
+    assert_eq(lines[3], "Black accuracy 100% over 1 move")
+    assert_eq(lines[4], "White worst: 1. e4 (-0%)")
+    assert_eq(lines[5], "Black worst: 1... e5 (-0%)")
+    assert_eq(lines[6], "Eval: +0.00 · White 50%")
+}
+
+@test
+func report_blunder_and_flag() {
+    // White drops 35 win points on move 1; white then flags.
+    st := report_frame([0, 0 - 300, 0 - 300], ["d4", "d5"], [201, 202], 0)
+    assert_eq(game.result_str(st), "0-1 Black wins on time")
+    lines := game.report(st)
+    assert_eq(lines[0], "Chesz report — 0-1 Black wins on time")
+    assert_eq(lines[2], "White accuracy 0% over 1 move")
+    assert_eq(lines[3], "Black accuracy 100% over 1 move")
+    assert_eq(lines[4], "White worst: 1. d4 (-35%)")
 }
 
 @test

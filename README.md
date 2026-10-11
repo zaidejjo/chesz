@@ -105,14 +105,16 @@ mid-menu.
 ## Board UI
 
 `src/tui/` is a retained frontend on the same engine. Launching with
-no args opens floating palettes (play/watch/quit → color → engine),
+no args opens floating palettes (play / hotseat / watch / quit →
+clock → color → engine),
 then the big board: centered 7×2 lichess-brown squares with a closed
 border frame (truecolor, 256-color, and basic16 tiers with a plain-ASCII
 fallback), hand-designed pixel pieces (7×4 art rasterized to
 half-block pairs — same silhouette both sides, ink color reads the
 side), cursor
 (arrows/hjkl), select with Enter (targets light up), promotion
-picker, coach hint (`?`), undo (`u`), resign (`q`), eval bar (`e`,
+picker, coach hint (`?`), undo (`u`, one ply in hotseat, two vs the
+engine), resign (`q`), eval bar (`e`,
 hidden by default). Checks pop
 top-right via `toast.top`; game-over and side panels never show stale
 to-move lines. Screen ownership via `tui.screen`, key decoding via
@@ -120,6 +122,18 @@ to-move lines. Screen ownership via `tui.screen`, key decoding via
 mode spectates engine vs engine with a quit poll between moves — pick
 a different rating per side (white Master, black Joker, anything);
 `e` toggles the same eval bar there.
+
+Hotseat runs two humans on one board (either color to move, takebacks
+cost a single ply). The clock palette offers Casual (no clock), Blitz
+5+0, or Rapid 15+10: remaining time sits in the side panel, the mover
+pays think time plus gains the increment, and expiry ends the game
+(`1-0 White wins on time`). No live ticking — the blocking key reader
+cannot redraw mid-thought — so the clock settles when each move lands.
+
+Every board-UI game ends with a printed report: result, move count,
+per-side accuracy (100 − 3 × win-points-dropped per move, from the
+cached eval history), each side's worst move, and the final eval line.
+Quit mid-game and the report says `unfinished` instead.
 
 All option picking (lobby, promotion, resign, game-over) goes through
 `src/tui/pick.zz`: centered `win.box_at` drawing plus a decoded loop

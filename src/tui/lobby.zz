@@ -54,6 +54,20 @@ func color_palette() -> int {
     }
 }
 
+func clock_palette() -> [int] {
+    // [white ms, black ms, increment ms]; -1 runs casual (no clock).
+    c := pick.pick("Clock", ["Casual (no clock)", "Blitz 5+0", "Rapid 15+10"])
+    if c == 1 {
+        [300000, 300000, 0]
+    } else {
+        if c == 2 {
+            [900000, 900000, 10000]
+        } else {
+            [0 - 1, 0 - 1, 0]
+        }
+    }
+}
+
 pub func run() -> bool {
     if !screen.is_tty() {
         return false
@@ -63,25 +77,32 @@ pub func run() -> bool {
     again := true
     while again {
         raw_on()
-        c := pick.pick("ZZ Chess 0.2.0", ["Play vs engine", "Watch engine vs engine", "Quit"])
+        c := pick.pick("ZZ Chess 0.2.0", ["Play vs engine", "Two humans (hotseat)", "Watch engine vs engine", "Quit"])
         if c == 0 {
             side := color_palette()
             if side != 0 {
-                played := game.run(engine_palette(), side)
+                played := game.run(engine_palette(), side, clock_palette())
                 if !played {
                     again = false
                 }
             }
         } else {
             if c == 1 {
-                w := engine_palette()
-                b := engine_palette()
-                watched := watch.run(w, b)
-                if !watched {
+                played := game.run_duo(clock_palette())
+                if !played {
                     again = false
                 }
             } else {
-                again = false
+                if c == 2 {
+                    w := engine_palette()
+                    b := engine_palette()
+                    watched := watch.run(w, b)
+                    if !watched {
+                        again = false
+                    }
+                } else {
+                    again = false
+                }
             }
         }
     }

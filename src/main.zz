@@ -323,7 +323,7 @@ func menu() {
             if side == "Black" {
                 human = 0 - 1
             }
-            if !game.run(pick_engine(), human) {
+            if !game.run(pick_engine(), human, [0 - 1, 0 - 1, 0]) {
                 play_human(person.club(), human)
             }
             again = ask.confirm("Back to menu?", true)
@@ -372,8 +372,6 @@ func analyze(fen_text: str) {
         .none => println("bad FEN")
     }
 }
-
-
 
 func show_fen(fen_text: str) {
     match fen.parse(fen_text) {
@@ -436,7 +434,7 @@ func main(args: [str]) {
         if len(args) > 1 && args[1] == "black" {
             human = 0 - 1
         }
-        if !game.run(person.club(), human) {
+        if !game.run(person.club(), human, [0 - 1, 0 - 1, 0]) {
             play_human(person.club(), human)
         }
         return

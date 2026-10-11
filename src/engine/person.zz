@@ -26,6 +26,10 @@ pub func joker() -> Engine {
     Engine{name: "Joker", elo: 400, depth: 1, movems: 50, variety: 0, blunder: 1000, joker: true}
 }
 
+pub func human() -> Engine {
+    Engine{name: "Human", elo: 0, depth: 0, movems: 0, variety: 0, blunder: 0, joker: false}
+}
+
 pub func novice() -> Engine {
     Engine{name: "Novice", elo: 800, depth: 1, movems: 200, variety: 150, blunder: 80, joker: false}
 }
