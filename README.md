@@ -137,7 +137,8 @@ cached eval history), each side's worst move, and the final eval line.
 Quit mid-game and the report says `unfinished` instead. Finished
 engine games record W-L-D per opponent in `~/.config/chesz/stats.json`
 (the play palette shows it: `Club (1200) [2-1-0]`) and print the record
-under the report.
+under the report. Rated games also move your lobby ladder (K=32,
+start 800): `You: 832 (+32)`.
 
 Every played game auto-saves PGN to `~/.config/chesz/games/` (headers
 + movetext + result, millisecond filename, never overwritten).

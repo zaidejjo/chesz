@@ -553,11 +553,12 @@ func finish(st: Frame, eng: person.Engine, human_side: int, duo: bool, white: st
     }
     screen.exit()
     opp := ""
+    delta := 0
     if !duo {
-        note_result(st, eng, human_side)
+        delta = note_result(st, eng, human_side)
         opp = eng.name
     }
-    show_report(st, white, black, opp)
+    show_report(st, white, black, opp, delta)
     true
 }
 
@@ -890,11 +891,11 @@ pub func report(st: Frame) -> [str] {
 // Record one finished engine game (human perspective). Unfinished
 // quits record nothing.
 
-func note_result(st: Frame, eng: person.Engine, human_side: int) {
+pub func note_result(st: Frame, eng: person.Engine, human_side: int) -> int {
     fl := flagged(st)
     res := person.result(st.pos, st.hist)
     if fl == 0 && res == 0 {
-        return
+        return 0
     }
     hwon := false
     draw := false
@@ -923,11 +924,14 @@ func note_result(st: Frame, eng: person.Engine, human_side: int) {
             score10 = 10
         }
     }
+    my := stats.ladder()
+    delta := 32 * (score10 - stats.expected10(my, eng.elo)) / 10
     stats.record(eng.name, score10)
-    return
+    stats.ladder_add(delta)
+    delta
 }
 
-func show_report(st: Frame, white: str, black: str, opp: str) {
+func show_report(st: Frame, white: str, black: str, opp: str, delta: int) {
     lines := report(st)
     println("")
     i := 0
@@ -939,6 +943,13 @@ func show_report(st: Frame, white: str, black: str, opp: str) {
         rl := stats.line_for(opp)
         if len(rl) > 0 {
             println("Record vs " + opp + ": " + rl + " (W-L-D)")
+        }
+        if delta != 0 {
+            tail := str(delta)
+            if delta > 0 {
+                tail = "+" + tail
+            }
+            println("You: " + str(stats.ladder()) + " (" + tail + ")")
         }
     }
     if len(st.played) > 0 {
