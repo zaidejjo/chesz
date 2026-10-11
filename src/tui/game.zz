@@ -19,6 +19,7 @@ import chesz.engine.moves
 import chesz.engine.person
 import chesz.engine.pgn
 import chesz.engine.san
+import chesz.engine.stats
 import chesz.tui.board_view
 import chesz.tui.pick
 import toast.toast
@@ -539,7 +540,12 @@ func finish(st: Frame, eng: person.Engine, human_side: int, duo: bool, white: st
     src := board_view.style_source()
     st = game_loop(st, eng, human_side, duo, mode, style, src)
     screen.exit()
-    show_report(st, white, black)
+    opp := ""
+    if !duo {
+        note_result(st, eng, human_side)
+        opp = eng.name
+    }
+    show_report(st, white, black, opp)
     true
 }
 
@@ -828,13 +834,59 @@ pub func report(st: Frame) -> [str] {
     out
 }
 
-func show_report(st: Frame, white: str, black: str) {
+// Record one finished engine game (human perspective). Unfinished
+// quits record nothing.
+
+func note_result(st: Frame, eng: person.Engine, human_side: int) {
+    fl := flagged(st)
+    res := person.result(st.pos, st.hist)
+    if fl == 0 && res == 0 {
+        return
+    }
+    hwon := false
+    draw := false
+    if fl == 1 {
+        hwon = human_side == 0 - 1
+    } else {
+        if fl == 2 {
+            hwon = human_side == 1
+        } else {
+            if res == 1 {
+                hwon = human_side == 1
+            } else {
+                if res == 2 {
+                    hwon = human_side == 0 - 1
+                } else {
+                    draw = true
+                }
+            }
+        }
+    }
+    score10 := 0
+    if draw {
+        score10 = 5
+    } else {
+        if hwon {
+            score10 = 10
+        }
+    }
+    stats.record(eng.name, score10)
+    return
+}
+
+func show_report(st: Frame, white: str, black: str, opp: str) {
     lines := report(st)
     println("")
     i := 0
     while i < len(lines) {
         println(lines[i])
         i = i + 1
+    }
+    if opp != "" {
+        rl := stats.line_for(opp)
+        if len(rl) > 0 {
+            println("Record vs " + opp + ": " + rl + " (W-L-D)")
+        }
     }
     if len(st.played) > 0 {
         path := save_pgn(st, white, black)

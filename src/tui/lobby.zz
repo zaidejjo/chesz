@@ -12,6 +12,7 @@ import chesz.engine.moves
 import chesz.engine.person
 import chesz.engine.pgn
 import chesz.engine.san
+import chesz.engine.stats
 import chesz.tui.board_view
 import chesz.tui.browse
 import chesz.tui.game
@@ -40,6 +41,30 @@ func raw_on() {
 
 func engine_palette() -> person.Engine {
     opts := person.roster_names()
+    c := pick.pick("Engine", opts)
+    if c < 0 || c >= len(opts) {
+        person.club()
+    } else {
+        person.by_index(c)
+    }
+}
+
+// Play palette: engine names with the stored W-L-D record appended.
+
+func play_engine_palette() -> person.Engine {
+    base := person.roster_names()
+    all := person.roster()
+    opts := []
+    i := 0
+    while i < len(base) {
+        line := base[i]
+        rec := stats.line_for(all[i].name)
+        if len(rec) > 0 {
+            line = line + " [" + rec + "]"
+        }
+        opts = vec.push(opts, line)
+        i = i + 1
+    }
     c := pick.pick("Engine", opts)
     if c < 0 || c >= len(opts) {
         person.club()
@@ -116,7 +141,7 @@ func load_pgn_flow() {
             if side == 0 {
                 return
             }
-            eng := engine_palette()
+            eng := play_engine_palette()
             clock := clock_palette()
             if side == 1 {
                 game.run_loaded(st, eng, side, clock, "Human", eng.name)
@@ -145,7 +170,7 @@ pub func run() -> bool {
         if c == 0 {
             side := color_palette()
             if side != 0 {
-                played := game.run(engine_palette(), side, clock_palette())
+                played := game.run(play_engine_palette(), side, clock_palette())
                 if !played {
                     again = false
                 }

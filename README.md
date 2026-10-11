@@ -133,7 +133,10 @@ cannot redraw mid-thought — so the clock settles when each move lands.
 Every board-UI game ends with a printed report: result, move count,
 per-side accuracy (100 − 3 × win-points-dropped per move, from the
 cached eval history), each side's worst move, and the final eval line.
-Quit mid-game and the report says `unfinished` instead.
+Quit mid-game and the report says `unfinished` instead. Finished
+engine games record W-L-D per opponent in `~/.config/chesz/stats.json`
+(the play palette shows it: `Club (1200) [2-1-0]`) and print the record
+under the report.
 
 Every played game auto-saves PGN to `~/.config/chesz/games/` (headers
 + movetext + result, millisecond filename, never overwritten).
