@@ -5,7 +5,7 @@ version = "0.2.0"
 [dependencies]
 rand = "^0.4.0"
 tui = "^0.1.0"
-ask = "^0.6.0"
+ask = { path = "../ask" }
 
 [dependencies.toast]
 path = "../toast"
