@@ -492,6 +492,79 @@ pub func config_path() -> str {
     home_dir() + "/.config/chesz/config.json"
 }
 
+// Last PGN browser directory, remembered across launches in the same
+// config file (pieces setting preserved on write).
+
+pub func last_dir_in_json(text: str) -> str {
+    j := json.parse_or_null(text)
+    if !json.is_object(j) {
+        return ""
+    }
+    v := json.path_get_or(j, "last_dir", json.null())
+    if !json.is_string(v) {
+        return ""
+    }
+    json.as_str(v)
+}
+
+func read_last_dir() -> str {
+    if !fs.exists(config_path()) {
+        return ""
+    }
+    match fs.read_to_string(config_path()) {
+        .ok(t) => last_dir_in_json(t),
+        .err(_) => "",
+    }
+}
+
+pub func get_last_dir() -> str {
+    d := read_last_dir()
+    if d == "" {
+        home_dir()
+    } else {
+        d
+    }
+}
+
+func style_name(style: int) -> str {
+    if style == 0 {
+        "ascii"
+    } else {
+        if style == 1 {
+            "glyphs"
+        } else {
+            "letters"
+        }
+    }
+}
+
+func esc_json(t: str) -> str {
+    s := str.replace(t, "\\", "\\\\")
+    str.replace(s, "\"", "\\\"")
+}
+
+pub func set_last_dir(dir: str) -> str {
+    style := file_style(config_path())
+    if style < 0 {
+        style = file_style(home_dir() + "/.config/chesz.json")
+    }
+    if style < 0 {
+        style = file_style(home_dir() + "/.config/chess.json")
+    }
+    if style < 0 {
+        style = 2
+    }
+    match fs.mkdir_all(home_dir() + "/.config/chesz") {
+        .ok(_) => 0,
+        .err(_) => 0 - 1,
+    }
+    match fs.write(config_path(), "{\"pieces\": \"" + style_name(style) + "\", \"last_dir\": \"" + esc_json(dir) + "\"}\n") {
+        .ok(_) => 0,
+        .err(_) => 0 - 1,
+    }
+    config_path()
+}
+
 pub func ensure_config() -> str {
     cfg := config_path()
     if fs.exists(cfg) {

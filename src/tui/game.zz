@@ -16,8 +16,8 @@ import chesz.engine.board
 import chesz.engine.book
 import chesz.engine.eval
 import chesz.engine.moves
-import chesz.engine.pgn
 import chesz.engine.person
+import chesz.engine.pgn
 import chesz.engine.san
 import chesz.tui.board_view
 import chesz.tui.pick
@@ -70,6 +70,21 @@ func replay(played: [int]) -> Frame {
     }
     st.cursor = st.last_to
     st = refresh_bar(st)
+    st
+}
+
+// Rebuild a live frame from bare move ints (PGN load): full SAN,
+// history, eval cache and bar, ready to continue playing.
+
+pub func from_moves(ms: [int]) -> Frame {
+    st := fresh_frame(1)
+    st = refresh_bar(st)
+    st.evals = [st.bar_cp]
+    i := 0
+    while i < len(ms) {
+        st = do_move(st, ms[i])
+        i = i + 1
+    }
     st
 }
 
@@ -507,48 +522,57 @@ func start_frame(human_side: int, clock: [int]) -> Frame {
     st
 }
 
-pub func run(eng: person.Engine, human_side: int, clock: [int]) -> bool {
+// Shared screen session: the report (and PGN save notice) print to a
+// cooked terminal below, so the exit stays explicit — never deferred.
+
+func finish(st: Frame, eng: person.Engine, human_side: int, duo: bool, white: str, black: str) -> bool {
     if !screen.is_tty() {
         return false
     }
     if !screen.enter() {
         return false
     }
-    // Explicit exit (no defer): the report prints to a cooked terminal
-    // below, after the alternate screen is gone.
     screen.hide()
     mode := screen.mode()
     board_view.ensure_config()
     style := board_view.resolve_style()
     src := board_view.style_source()
-    st := start_frame(human_side, clock)
-    st = game_loop(st, eng, human_side, false, mode, style, src)
+    st = game_loop(st, eng, human_side, duo, mode, style, src)
     screen.exit()
-    if human_side == 1 {
-        show_report(st, "Human", eng.name)
-    } else {
-        show_report(st, eng.name, "Human")
-    }
+    show_report(st, white, black)
     true
+}
+
+pub func run(eng: person.Engine, human_side: int, clock: [int]) -> bool {
+    if !screen.is_tty() {
+        return false
+    }
+    st := start_frame(human_side, clock)
+    if human_side == 1 {
+        finish(st, eng, human_side, false, "Human", eng.name)
+    } else {
+        finish(st, eng, human_side, false, eng.name, "Human")
+    }
 }
 
 pub func run_duo(clock: [int]) -> bool {
     if !screen.is_tty() {
         return false
     }
-    if !screen.enter() {
+    st := start_frame(1, clock)
+    finish(st, person.human(), 1, true, "Human", "Human")
+}
+
+// Continue a loaded game: clock + turn stamp on the replayed frame,
+// then the normal loop, report and save.
+
+pub func run_loaded(st: Frame, eng: person.Engine, human_side: int, clock: [int], white: str, black: str) -> bool {
+    if !screen.is_tty() {
         return false
     }
-    screen.hide()
-    mode := screen.mode()
-    board_view.ensure_config()
-    style := board_view.resolve_style()
-    src := board_view.style_source()
-    st := start_frame(1, clock)
-    st = game_loop(st, person.human(), 1, true, mode, style, src)
-    screen.exit()
-    show_report(st, "Human", "Human")
-    true
+    st = with_clock(st, clock)
+    st.turn_ms = time.now_ms()
+    finish(st, eng, human_side, false, white, black)
 }
 
 // One human turn: cursor loop until a move is made. Returns the frame;
@@ -835,13 +859,13 @@ func games_home() -> str {
 func save_pgn(st: Frame, white: str, black: str) -> str {
     dir := games_home()
     match fs.mkdir_all(dir) {
-        .ok(_) => 0,
-        .err(_) => 0 - 1,
+        .ok(_) => 0
+        .err(_) => 0 - 1
     }
     res := pgn.result_of(person.result(st.pos, st.hist), flagged(st))
     path := dir + "/game_" + str(time.now_ms()) + ".pgn"
     match fs.write(path, pgn.build(white, black, st.sans, res)) {
-        .ok(_) => path,
-        .err(_) => "",
+        .ok(_) => path
+        .err(_) => ""
     }
 }

@@ -1,0 +1,206 @@
+// PGN file browser: arrow-navigated directory list. Directories sort
+// first, only .pgn files show, dotfiles hide. Enter descends into a
+// directory or picks a file; backspace climbs; esc cancels ("").
+// Every visited directory persists via the config file, so the next
+// browse reopens where the last one left off. Caller must own raw
+// mode (the lobby does).
+
+import std.env
+import std.fs
+import std.str
+import std.vec
+
+import chesz.tui.board_view
+import tui.keys as tkeys
+import tui.screen
+
+pub func is_pgn_name(n: str) -> bool {
+    str.ends_with(n, ".pgn") || str.ends_with(n, ".PGN")
+}
+
+pub func join_path(dir: str, name: str) -> str {
+    if dir == "/" {
+        "/" + name
+    } else {
+        dir + "/" + name
+    }
+}
+
+pub func parent_of(path: str) -> str {
+    parts := str.split(path, "/")
+    keep := []
+    i := 0
+    while i < len(parts) {
+        if parts[i] != "" {
+            keep = vec.push(keep, parts[i])
+        }
+        i = i + 1
+    }
+    if len(keep) <= 1 {
+        "/"
+    } else {
+        out := ""
+        i = 0
+        while i < len(keep) - 1 {
+            out = out + "/" + keep[i]
+            i = i + 1
+        }
+        out
+    }
+}
+
+func home_fallback() -> str {
+    match env.home_dir() {
+        .some(h) => h
+        .none => "."
+    }
+}
+
+// Visible names: directories first, then .pgn files (sorted by the
+// OS read; dotfiles hidden).
+
+func collect_names(dir: str, all: [str]) -> [str] {
+    names := []
+    i := 0
+    while i < len(all) {
+        n := all[i]
+        if !str.starts_with(n, ".") && fs.is_dir(join_path(dir, n)) {
+            names = vec.push(names, n)
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < len(all) {
+        n := all[i]
+        if !str.starts_with(n, ".") && !fs.is_dir(join_path(dir, n)) && is_pgn_name(n) {
+            names = vec.push(names, n)
+        }
+        i = i + 1
+    }
+    names
+}
+
+func list_names(dir: str) -> [str] {
+    match fs.read_dir(dir) {
+        .ok(all) => collect_names(dir, all)
+        .err(_) => []
+    }
+}
+
+func draw_browser(dir: str, names: [str], sel: int) {
+    rows := []
+    rows = vec.push(rows, "Open PGN — " + dir)
+    rows = vec.push(rows, "")
+    if len(names) == 0 {
+        rows = vec.push(rows, "(empty — esc cancels)")
+    } else {
+        start := sel - 7
+        if start < 0 {
+            start = 0
+        }
+        end := start + 14
+        if end > len(names) {
+            end = len(names)
+            start = end - 14
+            if start < 0 {
+                start = 0
+            }
+        }
+        i := start
+        while i < end {
+            mark := "  "
+            if i == sel {
+                mark = "> "
+            }
+            suffix := ""
+            if fs.is_dir(join_path(dir, names[i])) {
+                suffix = "/"
+            }
+            rows = vec.push(rows, mark + names[i] + suffix)
+            i = i + 1
+        }
+    }
+    rows = vec.push(rows, "")
+    rows = vec.push(rows, "enter open · backspace up · esc cancel")
+    vw := 0
+    i := 0
+    while i < len(rows) {
+        L := len(rows[i])
+        if L > vw {
+            vw = L
+        }
+        i = i + 1
+    }
+    ox := 0
+    oy := 0
+    sz := screen.size()
+    if len(sz) >= 2 {
+        if sz[0] > vw {
+            ox = (sz[0] - vw) / 2
+        }
+        if sz[1] > len(rows) {
+            oy = (sz[1] - len(rows)) / 2
+        }
+    }
+    frame := board_view.compose(rows, [], ox, oy)
+    screen.clear()
+    screen.write(str.join(frame, "\r\n"))
+    screen.flush()
+}
+
+pub func browse(start: str) -> str {
+    dir := start
+    if dir == "." || dir == "" {
+        dir = home_fallback()
+    }
+    _saved := board_view.set_last_dir(dir)
+    sel := 0
+    picked := ""
+    live := true
+    while live {
+        names := list_names(dir)
+        if sel >= len(names) {
+            sel = 0
+        }
+        draw_browser(dir, names, sel)
+        k := tkeys.read()
+        if k == tkeys.enter() {
+            if len(names) > 0 {
+                full := join_path(dir, names[sel])
+                if fs.is_dir(full) {
+                    dir = full
+                    sel = 0
+                    _saved := board_view.set_last_dir(dir)
+                    sel = sel
+                } else {
+                    picked = full
+                    live = false
+                }
+            }
+        } else {
+            if k == tkeys.esc() || k == tkeys.eof() {
+                live = false
+            } else {
+                if k == tkeys.up() || k == 107 {
+                    if sel > 0 && len(names) > 0 {
+                        sel = sel - 1
+                    }
+                } else {
+                    if k == tkeys.down() || k == 106 {
+                        if sel + 1 < len(names) {
+                            sel = sel + 1
+                        }
+                    } else {
+                        if k == 8 || k == 127 || k == tkeys.left() {
+                            dir = parent_of(dir)
+                            sel = 0
+                            _saved := board_view.set_last_dir(dir)
+                            sel = sel
+                        }
+                    }
+                }
+            }
+        }
+    }
+    picked
+}

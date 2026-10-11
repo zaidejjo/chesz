@@ -3,9 +3,17 @@
 // its text menu for pipes. Palettes draw over the current screen and
 // return indices; game/watch own the alternate screen themselves.
 
+import std.fs
 import std.term
+import std.vec
 
+import chesz.engine.board
+import chesz.engine.moves
 import chesz.engine.person
+import chesz.engine.pgn
+import chesz.engine.san
+import chesz.tui.board_view
+import chesz.tui.browse
 import chesz.tui.game
 import chesz.tui.pick
 import chesz.tui.watch
@@ -68,6 +76,62 @@ func clock_palette() -> [int] {
     }
 }
 
+// Load flow: browse (reopens at the remembered dir), parse the
+// movetext, replay onto a live frame, then pick a side/engine/clock
+// and continue the game from the final position.
+
+func load_pgn_flow() {
+    path := browse.browse(board_view.get_last_dir())
+    if path == "" {
+        return
+    }
+    match fs.read_to_string(path) {
+        .ok(text) => {
+            toks := pgn.tokens(text)
+            p := board.setup()
+            ms := []
+            bad := ""
+            i := 0
+            while i < len(toks) {
+                m := san.parse_san(p, toks[i])
+                if m == 0 {
+                    bad = toks[i]
+                    i = len(toks)
+                } else {
+                    ms = vec.push(ms, m)
+                    p = moves.make(p, m)
+                    i = i + 1
+                }
+            }
+            if bad != "" {
+                pick.pick("Bad move in file: " + bad, ["OK"])
+                return
+            }
+            if len(ms) == 0 {
+                pick.pick("No moves in file", ["OK"])
+                return
+            }
+            st := game.from_moves(ms)
+            side := color_palette()
+            if side == 0 {
+                return
+            }
+            eng := engine_palette()
+            clock := clock_palette()
+            if side == 1 {
+                game.run_loaded(st, eng, side, clock, "Human", eng.name)
+                return
+            }
+            game.run_loaded(st, eng, side, clock, eng.name, "Human")
+            return
+        }
+        .err(_) => {
+            pick.pick("Cannot read file", ["OK"])
+            return
+        }
+    }
+}
+
 pub func run() -> bool {
     if !screen.is_tty() {
         return false
@@ -77,7 +141,7 @@ pub func run() -> bool {
     again := true
     while again {
         raw_on()
-        c := pick.pick("ZZ Chess 0.2.0", ["Play vs engine", "Two humans (hotseat)", "Watch engine vs engine", "Quit"])
+        c := pick.pick("ZZ Chess 0.2.0", ["Play vs engine", "Two humans (hotseat)", "Load PGN game", "Watch engine vs engine", "Quit"])
         if c == 0 {
             side := color_palette()
             if side != 0 {
@@ -94,14 +158,18 @@ pub func run() -> bool {
                 }
             } else {
                 if c == 2 {
-                    w := engine_palette()
-                    b := engine_palette()
-                    watched := watch.run(w, b)
-                    if !watched {
+                    load_pgn_flow()
+                } else {
+                    if c == 3 {
+                        w := engine_palette()
+                        b := engine_palette()
+                        watched := watch.run(w, b)
+                        if !watched {
+                            again = false
+                        }
+                    } else {
                         again = false
                     }
-                } else {
-                    again = false
                 }
             }
         }

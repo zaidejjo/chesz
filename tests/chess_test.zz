@@ -2,6 +2,7 @@
 // Fast — no search beyond depth-2 perft.
 
 import std.str
+import std.vec
 
 import chesz.engine.ai
 import chesz.engine.book
@@ -13,6 +14,7 @@ import chesz.engine.pgn
 import chesz.engine.san
 import chesz.main
 import chesz.tui.board_view
+import chesz.tui.browse
 import chesz.tui.game
 import chesz.tui.pick
 import chesz.uci.uci
@@ -650,7 +652,7 @@ func pgn_build_and_tokens() {
     assert_eq(toks[0], "e4")
     assert_eq(toks[2], "Nf3")
     // Foreign noise drops out: comments, NAGs, annotations, numbers.
-    toks = pgn.tokens("1. e4! {" + "best} e5 $12 2. Nf3? 1-0")
+    toks = pgn.tokens("1. e4! {{}best} e5 $12 2. Nf3? 1-0")
     assert_eq(len(toks), 3)
     assert_eq(toks[0], "e4")
     assert_eq(toks[2], "Nf3")
@@ -665,6 +667,48 @@ func pgn_build_and_tokens() {
                 i = i + 1
             }
             assert_eq(fen.generate(p), "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2")
+        }
+        .none => panic("startpos rejected")
+    }
+}
+
+@test
+func browser_paths() {
+    assert_eq(browse.parent_of("/a/b/c"), "/a/b")
+    assert_eq(browse.parent_of("/a"), "/")
+    assert_eq(browse.parent_of("/"), "/")
+    assert_eq(browse.join_path("/", "x.pgn"), "/x.pgn")
+    assert_eq(browse.join_path("/a", "x.pgn"), "/a/x.pgn")
+    assert_eq(browse.is_pgn_name("game.pgn"), true)
+    assert_eq(browse.is_pgn_name("game.PGN"), true)
+    assert_eq(browse.is_pgn_name("notes.txt"), false)
+}
+
+@test
+func last_dir_config() {
+    assert_eq(board_view.last_dir_in_json("{\"pieces\": \"letters\", \"last_dir\": \"/tmp\"}"), "/tmp")
+    assert_eq(board_view.last_dir_in_json("{\"pieces\": \"letters\"}"), "")
+    assert_eq(board_view.last_dir_in_json("not json"), "")
+    assert_eq(board_view.last_dir_in_json("{\"last_dir\": 42}"), "")
+}
+
+@test
+func from_moves_replays() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            ms := []
+            toks := ["e4", "e5", "Nf3", "Nc6"]
+            i := 0
+            while i < len(toks) {
+                ms = vec.push(ms, san.parse_san(p, toks[i]))
+                p = moves.make(p, ms[i])
+                i = i + 1
+            }
+            st := game.from_moves(ms)
+            assert_eq(len(st.played), 4)
+            assert_eq(st.sans[0], "e4")
+            assert_eq(st.sans[3], "Nc6")
+            assert_eq(len(st.evals), 5)
         }
         .none => panic("startpos rejected")
     }

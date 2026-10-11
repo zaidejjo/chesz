@@ -142,6 +142,15 @@ numbers/results/NAGs/comments dropped, each token matched through SAN
 — it prints every move, then the final board and result, stopping at
 the first token it cannot name.
 
+The lobby's Load PGN entry opens a file browser instead of a path
+prompt: directories first, only `.pgn` shows, arrows/hjkl move, Enter
+opens, Backspace climbs, Esc cancels. It reopens at the remembered
+directory — every visit persists `last_dir` in
+`~/.config/chesz/config.json` beside the pieces setting (never
+clobbered on write). After a good parse the game replays onto a live
+board and continues from the final position: pick a side, engine and
+clock as usual, with full eval history, report and re-save.
+
 All option picking (lobby, promotion, resign, game-over) goes through
 `src/tui/pick.zz`: centered `win.box_at` drawing plus a decoded loop
 (arrows/hjkl/home/end/enter/esc). The toast `palette`/`show` widgets
