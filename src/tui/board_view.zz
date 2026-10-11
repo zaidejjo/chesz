@@ -139,21 +139,37 @@ func glyph_for(v: int, mode: int) -> str {
 // Piece ink: near-black coffee on both shades in truecolor/256 (the
 // outline-vs-filled glyphs carry the side); bright pairs on basic16.
 
-func piece_fg(v: int, text: str, mode: int) -> str {
+func piece_fg(v: int, text: str, mode: int, sq: int) -> str {
     if mode == 0 {
         return text
     }
     if mode >= 3 {
+        // Ivory vanishes on the light squares, so white pieces read
+        // dark bronze there and ivory on the dark ones — the outline
+        // effect real sets get from black trim. Black stays umber:
+        // it contrasts on both shades.
         if v < 0 {
             return colors.bold(colors.rgb(text, 45, 30, 18))
         }
-        return colors.bold(colors.rgb(text, 255, 250, 240))
+        if v > 0 {
+            if (board.file_of(sq) + board.rank_of(sq)) % 2 == 1 {
+                return colors.bold(colors.rgb(text, 110, 58, 22))
+            }
+            return colors.bold(colors.rgb(text, 255, 250, 240))
+        }
+        return text
     }
     if mode == 2 {
         if v < 0 {
             return colors.bold(colors.color256(text, 232))
         }
-        return colors.bold(colors.color256(text, 231))
+        if v > 0 {
+            if (board.file_of(sq) + board.rank_of(sq)) % 2 == 1 {
+                return colors.bold(colors.color256(text, 94))
+            }
+            return colors.bold(colors.color256(text, 231))
+        }
+        return text
     }
     if v > 0 {
         colors.bright_white(text)
@@ -313,7 +329,7 @@ func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], 
                 }
             }
         }
-        cell := piece_fg(v, art, mode)
+        cell := piece_fg(v, art, mode, sq)
         line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, mode)
         f = f + 1
     }
@@ -697,23 +713,53 @@ func bar_seg(white: bool, mode: int) -> str {
     }
 }
 
+func bar_part(rem: int, mode: int) -> str {
+    if mode == 0 {
+        if rem >= 5 {
+            "#"
+        } else {
+            "."
+        }
+    } else {
+        if rem >= 7 {
+            colors.bright_white("▓")
+        } else {
+            if rem >= 4 {
+                colors.bright_white("▒")
+            } else {
+                colors.bright_white("░")
+            }
+        }
+    }
+}
+
 pub func with_bar(rows: [str], pct: int, mode: int) -> [str] {
-    f := pct * 16 / 100
-    if f < 0 {
-        f = 0
+    // Tenths of a row (0..160) so the boundary slides smoothly instead
+    // of jumping whole ranks: full white rows from the bottom plus one
+    // partial shade block (░▒▓) at the waterline.
+    t := pct * 160 / 100
+    if t < 0 {
+        t = 0
     }
-    if f > 16 {
-        f = 16
+    if t > 160 {
+        t = 160
     }
+    full := t / 10
+    rem := t % 10
     out := []
     i := 0
     while i < len(rows) {
         pre := "  "
         if i >= 1 && i <= 16 {
-            if 16 - i < f {
+            from_bottom := 16 - i
+            if from_bottom < full {
                 pre = bar_seg(true, mode) + " "
             } else {
-                pre = bar_seg(false, mode) + " "
+                if from_bottom == full && rem > 0 && full < 16 {
+                    pre = bar_part(rem, mode) + " "
+                } else {
+                    pre = bar_seg(false, mode) + " "
+                }
             }
         }
         out = vec.push(out, pre + rows[i])

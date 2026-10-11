@@ -130,8 +130,11 @@ cancel — unusable here; `toast.top`/`flash` (timed, keyless) and pure
 
 The eval bar is hidden until `e`: a 16-tall strip beside the board
 plus an `Eval: +0.65 · White 64%` panel line (mate scores show as
-mate/mated). One depth-1 search per *position* feeds it — cursor
-movement never searches — so it stays instant on native. It runs
+mate/mated). Iterative-deepening 1→2 under a 200ms clock re-runs on
+every *position* — depth 1 always lands instantly, depth 2 refines
+when time allows — while cursor movement never searches. The strip
+fills in tenths of a row (░▒▓ waterline) so it slides instead of
+jumping ranks. It runs
 synchronously on purpose: ZZ green tasks exist (`task.spawn`) but
 `try_join` never observes completion and two in-flight spawns hang
 (zaidejjo/zz#398), so no background worker can drive the UI until

@@ -65,12 +65,16 @@ func replay(played: [int]) -> Frame {
     st
 }
 
-// Eval-bar cache: a depth-1 search per POSITION (not per frame), so
-// cursor movement never searches. Synchronous by design: ZZ green
-// tasks exist (task.spawn) but try_join never observes completion and
-// two in-flight spawns deadlock (zaidejjo/zz#398) — no background
-// worker can drive the UI until upstream fixes polling. A depth-1
-// + quiescence look is milliseconds on native and already mate-aware.
+// Eval-bar cache: iterative-deepening 1→2 with a 200ms clock, run once
+// per POSITION (never per frame — cursor movement stays free). Depth 1
+// always completes, so the bar is instant; depth 2 refines it when the
+// clock allows, and every move re-runs it, so the number keeps tracking
+// the board instead of going stale. mate scores short-circuit to the
+// waterline ends.
+// Synchronous by design: ZZ green tasks exist (task.spawn) but
+// try_join never observes completion and two in-flight spawns deadlock
+// (zaidejjo/zz#398) — no background worker can deepen the bar while the
+// engine thinks until upstream fixes polling.
 
 pub func refresh_bar(st: Frame) -> Frame {
     ms := moves.gen_legal(st.pos)
@@ -92,10 +96,25 @@ pub func refresh_bar(st: Frame) -> Frame {
         }
         return st
     }
-    s := ai.best_score(st.pos, 1)
-    w := s
+    bar_eng := person.Engine{name: "Bar", elo: 0, depth: 2, movems: 200, variety: 0, blunder: 0, joker: false}
+    r := person.search_root(bar_eng, st.pos, st.hist)
+    if len(r.scores) == 0 {
+        st.bar_cp = eval.white_cp(st.pos)
+        st.bar_pct = eval.win_pct(st.bar_cp)
+        st.bar_mate = 0
+        return st
+    }
+    best := r.scores[0]
+    i := 1
+    while i < len(r.scores) {
+        if r.scores[i] > best {
+            best = r.scores[i]
+        }
+        i = i + 1
+    }
+    w := best
     if st.pos.side == 0 - 1 {
-        w = 0 - s
+        w = 0 - best
     }
     if w > 90000 {
         st.bar_mate = 1

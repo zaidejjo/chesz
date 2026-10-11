@@ -13,8 +13,8 @@ import chesz.engine.san
 import chesz.main
 import chesz.tui.board_view
 import chesz.tui.pick
-import tui.keys as tkeys
 import chesz.uci.uci
+import tui.keys as tkeys
 
 @test
 func fen_startpos_roundtrip() {
@@ -454,9 +454,6 @@ func view_promo_variants() {
     }
 }
 
-
-
-
 @test
 func view_ascii_pieces() {
     match fen.parse(fen.startpos()) {
@@ -482,7 +479,7 @@ func tray_and_movelist() {
             cap := board_view.captured(p, 0)
             assert_eq(cap[0], "W takes: -")
             assert_eq(cap[1], "B takes: -")
-        },
+        }
         .none => panic("startpos rejected")
     }
     match fen.parse("rnbqkbnr/ppp1pppp/8/3P4/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1") {
@@ -490,7 +487,7 @@ func tray_and_movelist() {
             cap := board_view.captured(p, 0)
             assert_eq(cap[0], "W takes: p")
             assert_eq(cap[1], "B takes: -")
-        },
+        }
         .none => panic("capture FEN rejected")
     }
     mv := board_view.movelist(["e4", "e5", "Nf3"], 3, 2)
@@ -524,20 +521,20 @@ func eval_bar_math() {
     match fen.parse(fen.startpos()) {
         .some(p) => {
             assert_eq(eval.white_cp(p), 0)
-        },
+        }
         .none => panic("startpos rejected")
     }
     match fen.parse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1") {
         .some(p) => {
             assert_eq(eval.white_cp(p), 0)
-        },
+        }
         .none => panic("mirror FEN rejected")
     }
     // New terms stay silent at startpos (symmetry + no outposts).
     match fen.parse(fen.startpos()) {
         .some(p) => {
             assert_eq(eval.evaluate(p), 8)
-        },
+        }
         .none => panic("startpos rejected")
     }
     // Display formatting.
@@ -560,7 +557,15 @@ func eval_bar_math() {
             f := board_view.with_bar(rows, 100, 0)
             assert_eq(str.starts_with(f[1], "#"), true)
             assert_eq(str.starts_with(f[16], "#"), true)
-        },
+            // Fractional waterline: pct 6 lights only the bottom row,
+            // pct 50 fills exactly the bottom eight of sixteen.
+            g := board_view.with_bar(rows, 6, 0)
+            assert_eq(str.starts_with(g[16], "#"), true)
+            assert_eq(str.starts_with(g[15], "."), true)
+            h := board_view.with_bar(rows, 50, 0)
+            assert_eq(str.starts_with(h[8], "."), true)
+            assert_eq(str.starts_with(h[9], "#"), true)
+        }
         .none => panic("startpos rejected")
     }
 }
