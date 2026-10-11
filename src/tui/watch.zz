@@ -66,7 +66,7 @@ pub func run(eng_w: person.Engine, eng_b: person.Engine) -> bool {
     board_view.ensure_config()
     style := board_view.resolve_style()
     src := board_view.style_source()
-    st := game.Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 0, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: ""}
+    st := game.Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 0, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1}
     quit := false
     while !quit {
         res := person.result(st.pos, st.hist)

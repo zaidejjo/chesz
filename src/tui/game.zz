@@ -32,6 +32,7 @@ pub struct Frame {
     last_from: int,
     last_to: int,
     hint: str,
+    hlast: int,
 }
 
 func fresh_frame(human_side: int) -> Frame {
@@ -39,11 +40,11 @@ func fresh_frame(human_side: int) -> Frame {
     if human_side == 0 - 1 {
         cur = 52
     }
-    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: ""}
+    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1}
 }
 
 func replay(played: [int]) -> Frame {
-    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: ""}
+    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1}
     i := 0
     while i < len(played) {
         st.sans = vec.push(st.sans, san.notation(st.pos, played[i]))
@@ -289,6 +290,9 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
                 if dt >= 0 {
                     st.hint = eng.name + " " + str(dt) + "ms"
                 }
+                if st.hlast >= 0 {
+                    st.cursor = st.hlast
+                }
             }
         }
     }
@@ -360,6 +364,7 @@ func press(st: Frame, human_side: int) -> Frame {
         m := pick_promo(legal, st.selected, st.cursor)
         if m != 0 {
             st = do_move(st, m)
+            st.hlast = st.last_to
             st.selected = 0 - 2
             return st
         }
