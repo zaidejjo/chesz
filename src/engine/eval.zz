@@ -8,6 +8,7 @@
 import std.vec
 
 import board
+import moves
 
 pub func piece_val(pc: int) -> int {
     if pc == 1 {
@@ -30,6 +31,53 @@ pub func piece_val(pc: int) -> int {
                 }
             }
         }
+    }
+}
+
+// White win percent from white-perspective centipawns (logistic,
+// piecewise-linear on anchors; mate handled by callers).
+
+pub func win_pct(cp: int) -> int {
+    a := cp
+    neg := false
+    if a < 0 {
+        neg = true
+        a = 0 - a
+    }
+    p := 50
+    if a < 50 {
+        p = 50 + a * 7 / 50
+    } else {
+        if a < 100 {
+            p = 57 + (a - 50) * 7 / 50
+        } else {
+            if a < 200 {
+                p = 64 + (a - 100) * 12 / 100
+            } else {
+                if a < 300 {
+                    p = 76 + (a - 200) * 9 / 100
+                } else {
+                    if a < 400 {
+                        p = 85 + (a - 300) * 6 / 100
+                    } else {
+                        if a < 600 {
+                            p = 91 + (a - 400) * 5 / 200
+                        } else {
+                            if a < 1000 {
+                                p = 96 + (a - 600) * 3 / 400
+                            } else {
+                                p = 99
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if neg {
+        100 - p
+    } else {
+        p
     }
 }
 
@@ -233,6 +281,9 @@ pub func evaluate(p: board.Pos) -> int {
     s = s + pawn_structure(wf, wr, bf, br, wfile, bfile)
     s = s + rook_files(p, wfile, bfile)
     s = s + shields(p, phase)
+    s = s + knight_outposts(p)
+    s = s + rook_seventh(p)
+    s = s + king_danger(p, phase)
     if p.side == 1 {
         s + 8
     } else {
@@ -255,6 +306,135 @@ func kings(p: board.Pos, phase: int) -> int {
         i = i + 1
     }
     s
+}
+
+// White-perspective centipawns with the tempo bonus stripped, so the
+// opening position reads exactly 0 (not +8). The eval bar and the
+// panel line both format this value.
+
+pub func white_cp(p: board.Pos) -> int {
+    s := evaluate(p)
+    if p.side == 1 {
+        s - 8
+    } else {
+        8 - s
+    }
+}
+
+// Knight outposts: a knight on c-f / 4th-6th (own-relative) leaning on
+// an own pawn earns +12. Zero at startpos (knights home).
+
+func knight_outposts(p: board.Pos) -> int {
+    s := 0
+    i := 0
+    while i < 64 {
+        v := p.b[i]
+        if v == 2 {
+            if is_outpost(p.b, i, 1) {
+                s = s + 12
+            }
+        } else {
+            if v == 0 - 2 {
+                if is_outpost(p.b, i, 0 - 1) {
+                    s = s - 12
+                }
+            }
+        }
+        i = i + 1
+    }
+    s
+}
+
+func is_outpost(b: [int], sq: int, side: int) -> bool {
+    f := board.file_of(sq)
+    r := board.rank_of(sq)
+    rel := r
+    if side == 0 - 1 {
+        rel = 7 - r
+    }
+    if f < 2 || f > 5 || rel < 3 || rel > 5 {
+        return false
+    }
+    pr := r - side
+    if pr < 0 || pr > 7 {
+        return false
+    }
+    if f > 0 && b[pr * 8 + f - 1] == side {
+        return true
+    }
+    if f < 7 && b[pr * 8 + f + 1] == side {
+        return true
+    }
+    false
+}
+
+// Rook on the seventh (own-relative): +10. Zero at startpos.
+
+func rook_seventh(p: board.Pos) -> int {
+    s := 0
+    i := 0
+    while i < 64 {
+        v := p.b[i]
+        if v == 4 {
+            if board.rank_of(i) == 6 {
+                s = s + 10
+            }
+        } else {
+            if v == 0 - 4 {
+                if board.rank_of(i) == 1 {
+                    s = s - 10
+                }
+            }
+        }
+        i = i + 1
+    }
+    s
+}
+
+// King danger: enemy attacks on the 8 king-ring squares, ~8cp each,
+// scaled by game phase (a middlegame concern; endgame kings walk).
+// Zero at startpos (no ring attacks). evaluate() is the only caller;
+// fast() stays blind for quiescence speed.
+
+func king_danger(p: board.Pos, phase: int) -> int {
+    if phase <= 0 {
+        return 0
+    }
+    wk := moves.king_sq(p.b, 1)
+    bk := moves.king_sq(p.b, 0 - 1)
+    wd := 0
+    bd := 0
+    if wk >= 0 {
+        wd = ring_attacks(p.b, wk, 0 - 1)
+    }
+    if bk >= 0 {
+        bd = ring_attacks(p.b, bk, 1)
+    }
+    (bd - wd) * phase * 8 / 24
+}
+
+func ring_attacks(b: [int], k: int, by: int) -> int {
+    n := 0
+    r := board.rank_of(k)
+    f := board.file_of(k)
+    dr := 0 - 1
+    while dr <= 1 {
+        df := 0 - 1
+        while df <= 1 {
+            if dr != 0 || df != 0 {
+                nr := r + dr
+                nf := f + df
+                if nr >= 0 && nr < 8 && nf >= 0 && nf < 8 {
+                    if moves.is_attacked(b, nr * 8 + nf, by) {
+                        n = n + 1
+                    }
+                }
+            }
+            df = df + 1
+        }
+        dr = dr + 1
+    }
+    n
 }
 
 // White-perspective structure: each side scored with its own pawns as

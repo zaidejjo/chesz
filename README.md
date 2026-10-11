@@ -16,11 +16,13 @@ src/engine/          reusable core — no UI imports, any frontend works:
                      check detection, make/null-move, pin-aware filter
   fen.zz             FEN import/export (Option, never throws)
   san.zz             SAN display + coordinate/castle parsing
-  eval.zz            tapered eval (fast leaf path + full structure)
+  eval.zz            tapered eval (fast leaf path + full structure:
+                     outposts, 7th-rank rooks, king-ring danger)
   ai.zz              negamax: PVS, LMR, null-move, futility, MCP,
-                     single-reply extensions, quiescence, MVV-LVA
+                     check + single-reply extensions, deep quiescence,
+                     MVV-LVA
   person.zz          rated personalities + ID w/ clock (search_root)
-  book.zz            14-line opening book
+  book.zz            19-line opening book
 src/uci/             UCI protocol interface (uses engine only)
   uci.zz             position/go/bestmove, Skill/Elo options
 src/tui/             terminal board frontend (uses engine only)
@@ -55,7 +57,7 @@ engine (pick both), or Self-test. Text moves are typed as `e2e4`
 (`e7e8q` for promotion, `O-O` / `O-O-O` for castles, `hint` for a
 coach suggestion, `resign` to quit, confirmed). Engine replies print
 in SAN with `[book]` or think time.
-The first moves of every game come from the built-in 14-line book.
+The first moves of every game come from the built-in 19-line book.
 On non-TTY stdin the prompts fall back to numbered/line input, so the
 whole flow is pipe-testable. (If stdin is *closed*, `ask` retries
 forever — upstream issue, Ctrl-C out.)
@@ -110,12 +112,14 @@ fallback), hand-designed pixel pieces (7×4 art rasterized to
 half-block pairs — same silhouette both sides, ink color reads the
 side), cursor
 (arrows/hjkl), select with Enter (targets light up), promotion
-picker, coach hint (`?`), undo (`u`), resign (`q`). Checks pop
+picker, coach hint (`?`), undo (`u`), resign (`q`), eval bar (`e`,
+hidden by default). Checks pop
 top-right via `toast.top`; game-over and side panels never show stale
 to-move lines. Screen ownership via `tui.screen`, key decoding via
 `alias tui.keys` (full `ask` entry collides — zaidejjo/zz#380). Watch
 mode spectates engine vs engine with a quit poll between moves — pick
-a different rating per side (white Master, black Joker, anything).
+a different rating per side (white Master, black Joker, anything);
+`e` toggles the same eval bar there.
 
 All option picking (lobby, promotion, resign, game-over) goes through
 `src/tui/pick.zz`: centered `win.box_at` drawing plus a decoded loop
@@ -123,6 +127,15 @@ All option picking (lobby, promotion, resign, game-over) goes through
 read raw bytes but compare decoded codes, so arrows arrive as ESC and
 cancel — unusable here; `toast.top`/`flash` (timed, keyless) and pure
 `box_at` stay.
+
+The eval bar is hidden until `e`: a 16-tall strip beside the board
+plus an `Eval: +0.65 · White 64%` panel line (mate scores show as
+mate/mated). One depth-1 search per *position* feeds it — cursor
+movement never searches — so it stays instant on native. It runs
+synchronously on purpose: ZZ green tasks exist (`task.spawn`) but
+`try_join` never observes completion and two in-flight spawns hang
+(zaidejjo/zz#398), so no background worker can drive the UI until
+upstream fixes polling.
 
 ## Personalities
 

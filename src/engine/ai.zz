@@ -184,7 +184,7 @@ pub func search(p: board.Pos, depth: int, alpha: int, beta: int) -> int {
     // Horizon hands off to quiescence (captures resolve, checks evade)
     // instead of a blind static eval.
     if depth == 0 {
-        return qsearch(p, alpha, beta, 4)
+        return qsearch(p, alpha, beta, 6)
     }
     all := moves.gen_legal(p)
     if len(all) == 0 {
@@ -194,6 +194,11 @@ pub func search(p: board.Pos, depth: int, alpha: int, beta: int) -> int {
         return 0
     }
     ic := moves.in_check(p)
+    if ic && depth <= 3 {
+        // Check extension: forced evasions see one ply deeper. Tactics
+        // live in checks; capped so checking cascades cannot run away.
+        depth = depth + 1
+    }
     if ic && len(all) == 1 && depth <= 4 {
         // Single-reply extension: forced lines see one ply deeper.
         // Self-limiting (replies are rarely unique twice) and capped.

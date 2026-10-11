@@ -12,6 +12,7 @@ import std.vec
 import chesz.engine.ai
 import chesz.engine.board
 import chesz.engine.book
+import chesz.engine.eval
 import chesz.engine.moves
 import chesz.engine.person
 import chesz.engine.san
@@ -33,6 +34,10 @@ pub struct Frame {
     last_to: int,
     hint: str,
     hlast: int,
+    show_bar: bool,
+    bar_cp: int,
+    bar_pct: int,
+    bar_mate: int,
 }
 
 func fresh_frame(human_side: int) -> Frame {
@@ -40,11 +45,11 @@ func fresh_frame(human_side: int) -> Frame {
     if human_side == 0 - 1 {
         cur = 52
     }
-    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1}
+    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0}
 }
 
 func replay(played: [int]) -> Frame {
-    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1}
+    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0}
     i := 0
     while i < len(played) {
         st.sans = vec.push(st.sans, san.notation(st.pos, played[i]))
@@ -56,6 +61,61 @@ func replay(played: [int]) -> Frame {
         i = i + 1
     }
     st.cursor = st.last_to
+    st = refresh_bar(st)
+    st
+}
+
+// Eval-bar cache: a depth-1 search per POSITION (not per frame), so
+// cursor movement never searches. Synchronous by design: ZZ green
+// tasks exist (task.spawn) but try_join never observes completion and
+// two in-flight spawns deadlock (zaidejjo/zz#398) — no background
+// worker can drive the UI until upstream fixes polling. A depth-1
+// + quiescence look is milliseconds on native and already mate-aware.
+
+pub func refresh_bar(st: Frame) -> Frame {
+    ms := moves.gen_legal(st.pos)
+    if len(ms) == 0 {
+        if moves.in_check(st.pos) {
+            if st.pos.side == 1 {
+                st.bar_mate = 0 - 1
+                st.bar_pct = 0
+                st.bar_cp = 0 - 99999
+            } else {
+                st.bar_mate = 1
+                st.bar_pct = 100
+                st.bar_cp = 99999
+            }
+        } else {
+            st.bar_mate = 0
+            st.bar_pct = 50
+            st.bar_cp = 0
+        }
+        return st
+    }
+    s := ai.best_score(st.pos, 1)
+    w := s
+    if st.pos.side == 0 - 1 {
+        w = 0 - s
+    }
+    if w > 90000 {
+        st.bar_mate = 1
+        st.bar_pct = 100
+        st.bar_cp = 99999
+    } else {
+        if w < 0 - 90000 {
+            st.bar_mate = 0 - 1
+            st.bar_pct = 0
+            st.bar_cp = 0 - 99999
+        } else {
+            cp := w - 8
+            if st.pos.side == 0 - 1 {
+                cp = w + 8
+            }
+            st.bar_cp = cp
+            st.bar_pct = eval.win_pct(cp)
+            st.bar_mate = 0
+        }
+    }
     st
 }
 
@@ -87,6 +147,9 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int
     out = vec.push(out, "ZZ Chess 0.2.0")
     out = vec.push(out, eng.name + " (" + str(eng.elo) + ")")
     out = vec.push(out, gfx_line(style, src))
+    if st.show_bar {
+        out = vec.push(out, board_view.eval_line(st.bar_cp, st.bar_pct, st.bar_mate))
+    }
     res := person.result(st.pos, st.hist)
     if res != 0 {
         out = vec.push(out, "")
@@ -118,7 +181,7 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int
     }
     out = vec.push(out, "")
     out = vec.push(out, "arrows/hjkl move · enter select")
-    out = vec.push(out, "? coach hint · u undo · q resign")
+    out = vec.push(out, "? coach hint · u undo · q resign · e eval")
     out
 }
 
@@ -168,6 +231,9 @@ pub func draw_frame(rows: [str], side: [str]) {
 
 func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int, style: int, src: str) {
     rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode, style)
+    if st.show_bar {
+        rows = board_view.with_bar(rows, st.bar_pct, mode)
+    }
     side := panel(st, eng, human_side, extra, mode, style, src)
     draw_frame(rows, side)
 }
@@ -189,6 +255,7 @@ pub func do_move(st: Frame, m: int) -> Frame {
             st.hint = "Check!"
         }
     }
+    st = refresh_bar(st)
     st
 }
 
@@ -264,6 +331,7 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
     style := board_view.resolve_style()
     src := board_view.style_source()
     st := fresh_frame(human_side)
+    st = refresh_bar(st)
     quit := false
     while !quit {
         res := person.result(st.pos, st.hist)
@@ -336,6 +404,10 @@ func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, styl
                             } else {
                                 if k == 117 {
                                     st = undo(st, human_side)
+                                } else {
+                                    if k == 101 {
+                                        st.show_bar = !st.show_bar
+                                    }
                                 }
                             }
                         }
@@ -396,6 +468,7 @@ func undo(st: Frame, human_side: int) -> Frame {
     }
     st2 := replay(slice_moves(st.played, len(st.played) - 2))
     st2.cursor = st.cursor
+    st2.show_bar = st.show_bar
     st2
 }
 

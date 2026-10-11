@@ -510,3 +510,74 @@ func style_config() {
     assert_eq(board_view.style_in_json("not json"), 0 - 1)
     assert_eq(board_view.style_in_json("{\"nope\": 1}"), 0 - 1)
 }
+
+@test
+func eval_bar_math() {
+    // Logistic anchors + symmetry: mate handled by callers, never here.
+    assert_eq(eval.win_pct(0), 50)
+    assert_eq(eval.win_pct(100), 64)
+    assert_eq(eval.win_pct(0 - 100), 36)
+    assert_eq(eval.win_pct(1000), 99)
+    assert_eq(eval.win_pct(0 - 1000), 1)
+    assert_eq(eval.win_pct(200) + eval.win_pct(0 - 200), 100)
+    // white_cp strips tempo: startpos reads exactly 0 either side to move.
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            assert_eq(eval.white_cp(p), 0)
+        },
+        .none => panic("startpos rejected")
+    }
+    match fen.parse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1") {
+        .some(p) => {
+            assert_eq(eval.white_cp(p), 0)
+        },
+        .none => panic("mirror FEN rejected")
+    }
+    // New terms stay silent at startpos (symmetry + no outposts).
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            assert_eq(eval.evaluate(p), 8)
+        },
+        .none => panic("startpos rejected")
+    }
+    // Display formatting.
+    assert_eq(board_view.fmt_cp(65), "+0.65")
+    assert_eq(board_view.fmt_cp(0 - 5), "-0.05")
+    assert_eq(board_view.fmt_cp(0), "+0.00")
+    assert_eq(board_view.eval_line(65, 64, 0), "Eval: +0.65 · White 64%")
+    assert_eq(board_view.eval_line(0, 100, 1), "Eval: mate 1 · White 100%")
+    assert_eq(board_view.eval_line(0, 0, 0 - 1), "Eval: mated 1 · White 0%")
+    // Bar keeps 19 rows and fills white from the bottom.
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 0, 2)
+            b := board_view.with_bar(rows, 62, 0)
+            assert_eq(len(b), 19)
+            assert_eq(str.starts_with(b[1], "."), true)
+            assert_eq(str.starts_with(b[16], "#"), true)
+            e := board_view.with_bar(rows, 0, 0)
+            assert_eq(str.starts_with(e[16], "."), true)
+            f := board_view.with_bar(rows, 100, 0)
+            assert_eq(str.starts_with(f[1], "#"), true)
+            assert_eq(str.starts_with(f[16], "#"), true)
+        },
+        .none => panic("startpos rejected")
+    }
+}
+
+@test
+func book_grew_past_sicilian() {
+    // 1.e4 c5 2.Nf3 -> d6; French 3.Nc3; London 2...Nf6.
+    match fen.parse("rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 0 1") {
+        .some(p) => assert_eq(book.probe(p) != 0, true)
+        .none => panic("sicilian FEN rejected")
+    }
+    match fen.parse("rnbqkbnr/ppp2ppp/4p3/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 1") {
+        .some(p) => assert_eq(book.probe(p) != 0, true)
+        .none => panic("french FEN rejected")
+    }
+    match fen.parse("rnbqkbnr/ppp1pppp/8/3p4/3P1B2/8/PPP1PPPP/RNQ1KBNR b KQkq - 0 1") {
+        .some(p) => assert_eq(book.probe(p) != 0, true)
+        .none => panic("london FEN rejected")
+    }
+}

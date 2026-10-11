@@ -645,6 +645,83 @@ pub func movelist(sans: [str], total: int, n: int) -> [str] {
     out
 }
 
+// Eval bar: white win-% as a 16-tall strip beside the board rows.
+// Rows 1..16 are the cell rows (top rank first); white fills from the
+// bottom, exactly like the major GUIs. Pure: same rows in, rows out.
+
+pub func fmt_cp(cp: int) -> str {
+    a := cp
+    neg := false
+    if a < 0 {
+        neg = true
+        a = 0 - a
+    }
+    w := a / 100
+    r := a % 100
+    dec := str(r)
+    if r < 10 {
+        dec = "0" + dec
+    }
+    if neg {
+        "-" + str(w) + "." + dec
+    } else {
+        "+" + str(w) + "." + dec
+    }
+}
+
+pub func eval_line(cp: int, pct: int, mate: int) -> str {
+    if mate > 0 {
+        "Eval: mate " + str(mate) + " · White 100%"
+    } else {
+        if mate < 0 {
+            "Eval: mated " + str(0 - mate) + " · White 0%"
+        } else {
+            "Eval: " + fmt_cp(cp) + " · White " + str(pct) + "%"
+        }
+    }
+}
+
+func bar_seg(white: bool, mode: int) -> str {
+    if mode == 0 {
+        if white {
+            "#"
+        } else {
+            "."
+        }
+    } else {
+        if white {
+            colors.bright_white("█")
+        } else {
+            colors.dim("░")
+        }
+    }
+}
+
+pub func with_bar(rows: [str], pct: int, mode: int) -> [str] {
+    f := pct * 16 / 100
+    if f < 0 {
+        f = 0
+    }
+    if f > 16 {
+        f = 16
+    }
+    out := []
+    i := 0
+    while i < len(rows) {
+        pre := "  "
+        if i >= 1 && i <= 16 {
+            if 16 - i < f {
+                pre = bar_seg(true, mode) + " "
+            } else {
+                pre = bar_seg(false, mode) + " "
+            }
+        }
+        out = vec.push(out, pre + rows[i])
+        i = i + 1
+    }
+    out
+}
+
 pub func compose(rows: [str], side: [str], ox: int, oy: int) -> [str] {
     width := 0
     i := 0
