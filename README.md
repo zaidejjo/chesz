@@ -105,7 +105,7 @@ mid-menu.
 ## Board UI
 
 `src/tui/` is a retained frontend on the same engine. Launching with
-no args opens floating palettes (play / hotseat / watch / quit →
+no args opens floating palettes (play / hotseat / load / puzzles / watch / quit →
 clock → color → engine),
 then the big board: centered 7×2 lichess-brown squares with a closed
 border frame (truecolor, 256-color, and basic16 tiers with a plain-ASCII
@@ -114,7 +114,7 @@ half-block pairs — same silhouette both sides, ink color reads the
 side), cursor
 (arrows/hjkl), select with Enter (targets light up), promotion
 picker, coach hint (`?`), undo (`u`, one ply in hotseat, two vs the
-engine), resign (`q`), eval bar (`e`,
+engine), resign (`q`), puzzles (mate-in-1 pack, 3 tries each), eval bar (`e`,
 hidden by default). Checks pop
 top-right via `toast.top`; game-over and side panels never show stale
 to-move lines. Screen ownership via `tui.screen`, key decoding via

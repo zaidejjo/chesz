@@ -17,6 +17,7 @@ import chesz.tui.board_view
 import chesz.tui.browse
 import chesz.tui.game
 import chesz.tui.pick
+import chesz.tui.puzz
 import chesz.tui.watch
 import tui.screen
 
@@ -166,7 +167,7 @@ pub func run() -> bool {
     again := true
     while again {
         raw_on()
-        c := pick.pick("ZZ Chess 0.2.0", ["Play vs engine", "Two humans (hotseat)", "Load PGN game", "Watch engine vs engine", "Quit"])
+        c := pick.pick("ZZ Chess 0.2.0", ["Play vs engine", "Two humans (hotseat)", "Load PGN game", "Puzzles", "Watch engine vs engine", "Quit"])
         if c == 0 {
             side := color_palette()
             if side != 0 {
@@ -186,14 +187,21 @@ pub func run() -> bool {
                     load_pgn_flow()
                 } else {
                     if c == 3 {
-                        w := engine_palette()
-                        b := engine_palette()
-                        watched := watch.run(w, b)
-                        if !watched {
+                        puzzled := puzz.run()
+                        if !puzzled {
                             again = false
                         }
                     } else {
-                        again = false
+                        if c == 4 {
+                            w := engine_palette()
+                            b := engine_palette()
+                            watched := watch.run(w, b)
+                            if !watched {
+                                again = false
+                            }
+                        } else {
+                            again = false
+                        }
                     }
                 }
             }

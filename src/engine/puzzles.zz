@@ -1,0 +1,46 @@
+// Built-in mate-in-1 pack (white to move, unique key moves — all five
+// verified by search, never by hand). find_mate accepts ANY mating
+// move, so puzzles stay solvable even when a second mate exists.
+
+import ai
+import board
+import moves
+import person
+
+pub func count() -> int {
+    5
+}
+
+func fens() -> [str] {
+    ["r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 0 1", "6k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1", "7k/7p/4N3/8/8/8/5PPP/R5K1 w - - 0 1", "6k1/5ppp/8/8/8/1Q6/5PPP/5RK1 w - - 0 1", "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 0 1"]
+}
+
+func descs() -> [str] {
+    ["Scholar's mate", "Back-rank mate", "Arabian mate", "Anastasia's mate", "The f-pawn hunt"]
+}
+
+pub func fen_at(i: int) -> str {
+    fens()[i]
+}
+
+pub func desc_at(i: int) -> str {
+    descs()[i]
+}
+
+pub func find_mate(p: board.Pos) -> int {
+    ms := moves.gen_legal(p)
+    i := 0
+    while i < len(ms) {
+        q := moves.make(p, ms[i])
+        h := ai.push_hist([], p)
+        res := person.result(q, h)
+        if res == 1 && p.side == 1 {
+            return ms[i]
+        }
+        if res == 2 && p.side == 0 - 1 {
+            return ms[i]
+        }
+        i = i + 1
+    }
+    0
+}

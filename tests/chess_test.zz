@@ -11,6 +11,7 @@ import chesz.engine.fen
 import chesz.engine.moves
 import chesz.engine.person
 import chesz.engine.pgn
+import chesz.engine.puzzles
 import chesz.engine.san
 import chesz.engine.stats
 import chesz.main as app
@@ -750,6 +751,20 @@ func eval_graph_marks() {
     assert_eq(board_view.eval_graph([0 - 99999, 0 - 99999], 2), "▁▁")
     g := board_view.eval_graph([0, 0, 0, 0], 2)
     assert_eq(g, "▅▅")
+}
+
+@test
+func puzzles_all_mate() {
+    assert_eq(puzzles.count(), 5)
+    i := 0
+    while i < puzzles.count() {
+        assert_eq(len(puzzles.desc_at(i)) > 0, true)
+        match fen.parse(puzzles.fen_at(i)) {
+            .some(p) => assert_eq(puzzles.find_mate(p) != 0, true)
+            .none => panic("puzzle FEN rejected")
+        }
+        i = i + 1
+    }
 }
 
 @test
