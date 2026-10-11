@@ -1,0 +1,85 @@
+// Backend detection, yazi-style: environment first, probe as
+// tiebreak. Priority: kitty placeholders-capable terms, iTerm2-inline
+// terms, then glyphs. Sixel deliberately unsupported (needs an image
+// encoder in ZZ; zellij's sixel is broken upstream anyway).
+
+import std.env
+
+pub const BK_GLYPH:int = 0
+pub const BK_KITTY:int = 1
+pub const BK_ITERM:int = 2
+pub const BK_UNDECIDED:int = 0 - 1
+
+func env_or(key: str) -> str {
+    match env.get_var(key) {
+        .some(v) => v
+        .none => ""
+    }
+}
+
+pub func term_val() -> str {
+    env_or("TERM")
+}
+
+pub func prog_val() -> str {
+    env_or("TERM_PROGRAM")
+}
+
+pub func kitty_val() -> str {
+    env_or("KITTY_WINDOW_ID")
+}
+
+pub func wt_val() -> str {
+    env_or("WT_SESSION")
+}
+
+pub func tmux_val() -> str {
+    env_or("TMUX")
+}
+
+pub func zel_val() -> str {
+    env_or("ZELLIJ_SESSION_NAME")
+}
+
+// Pure pick over snapshots (unit-testable): strong env answers
+// directly, anything else stays undecided for the live probe.
+
+pub func pick(term: str, prog: str, kitty_win: str, wt: str) -> int {
+    if kitty_win != "" {
+        return BK_KITTY
+    }
+    if prog == "WezTerm" {
+        return BK_ITERM
+    }
+    if prog == "iTerm.app" {
+        return BK_ITERM
+    }
+    if prog == "vscode" {
+        return BK_ITERM
+    }
+    if prog == "WarpTerminal" {
+        return BK_ITERM
+    }
+    if prog == "ghostty" {
+        return BK_KITTY
+    }
+    if term == "xterm-kitty" {
+        return BK_KITTY
+    }
+    if wt != "" {
+        return BK_GLYPH
+    }
+    BK_UNDECIDED
+}
+
+pub func detect() -> int {
+    pick(env_or("TERM"), env_or("TERM_PROGRAM"), env_or("KITTY_WINDOW_ID"), env_or("WT_SESSION"))
+}
+
+pub func in_tmux() -> bool {
+    env_or("TMUX") != ""
+}
+
+pub func in_zellij() -> bool {
+    env_or("ZELLIJ_SESSION_NAME") != ""
+}

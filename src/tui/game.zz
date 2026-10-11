@@ -14,6 +14,7 @@ import chess.engine.book
 import chess.engine.moves
 import chess.engine.person
 import chess.engine.san
+import chess.tui.backend
 import chess.tui.board_view
 import chess.tui.img
 import chess.tui.pick
@@ -32,6 +33,7 @@ pub struct Frame {
     last_from: int,
     last_to: int,
     hint: str,
+    be: int,
 }
 
 func fresh_frame(human_side: int) -> Frame {
@@ -39,11 +41,11 @@ func fresh_frame(human_side: int) -> Frame {
     if human_side == 0 - 1 {
         cur = 52
     }
-    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: ""}
+    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", be: 0}
 }
 
-func replay(played: [int]) -> Frame {
-    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: ""}
+func replay(played: [int], be: int) -> Frame {
+    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", be: 0}
     i := 0
     while i < len(played) {
         st.sans = vec.push(st.sans, san.notation(st.pos, played[i]))
@@ -55,6 +57,7 @@ func replay(played: [int]) -> Frame {
         i = i + 1
     }
     st.cursor = st.last_to
+    st.be = be
     st
 }
 
@@ -66,9 +69,13 @@ func side_name(side: int) -> str {
     }
 }
 
-func gfx_line(mode: int) -> str {
+func gfx_line(mode: int, be: int) -> str {
     if mode == 4 {
-        "Gfx: PNG pieces"
+        if be == 2 {
+            "Gfx: PNG (iterm2)"
+        } else {
+            "Gfx: PNG (kitty)"
+        }
     } else {
         if mode == 0 {
             "Gfx: letters"
@@ -82,7 +89,7 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int
     out := []
     out = vec.push(out, "ZZ Chess 0.2.0")
     out = vec.push(out, eng.name + " (" + str(eng.elo) + ")")
-    out = vec.push(out, gfx_line(mode))
+    out = vec.push(out, gfx_line(mode, st.be))
     res := person.result(st.pos, st.hist)
     if res != 0 {
         out = vec.push(out, "")
@@ -109,7 +116,7 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int
     out
 }
 
-pub func draw_frame(rows: [str], side: [str], pos: board.Pos, show_img: bool) {
+pub func draw_frame(st: Frame, rows: [str], side: [str]) {
     cols := 80
     rows_n := 24
     sz := screen.size()
@@ -151,15 +158,15 @@ pub func draw_frame(rows: [str], side: [str], pos: board.Pos, show_img: bool) {
     screen.clear()
     screen.write(str.join(frame, "\r\n"))
     screen.flush()
-    if show_img {
+    if st.be > 0 {
         img.clear()
-        img.show_board(pos, ox, oy)
+        img.show_board(st.pos, ox, oy, st.cursor, st.selected, st.be)
     }
 }
 func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int) {
     rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode)
     side := panel(st, eng, human_side, extra, mode)
-    draw_frame(rows, side, st.pos, mode == 4)
+    draw_frame(st, rows, side)
 }
 
 pub func do_move(st: Frame, m: int) -> Frame {
@@ -250,12 +257,22 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
     defer screen.exit()
     screen.hide()
     mode := screen.mode()
-    imgs := img.supported()
-    if imgs {
+    be := backend.pick(backend.term_val(), backend.prog_val(), backend.kitty_val(), backend.wt_val())
+    if be == backend.BK_UNDECIDED {
+        if img.supported() {
+            be = backend.BK_KITTY
+        } else {
+            be = backend.BK_GLYPH
+        }
+    }
+    if be == backend.BK_KITTY {
         img.transmit_all()
+    }
+    if be != backend.BK_GLYPH {
         mode = 4
     }
     st := fresh_frame(human_side)
+    st.be = be
     quit := false
     while !quit {
         res := person.result(st.pos, st.hist)
@@ -279,7 +296,7 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
             }
         }
     }
-    if imgs {
+    if be != backend.BK_GLYPH {
         img.clear()
     }
     true
@@ -379,7 +396,7 @@ func undo(st: Frame, human_side: int) -> Frame {
     if st.pos.side != human_side || len(st.played) < 2 {
         return st
     }
-    st2 := replay(slice_moves(st.played, len(st.played) - 2))
+    st2 := replay(slice_moves(st.played, len(st.played) - 2), st.be)
     st2.cursor = st.cursor
     st2
 }

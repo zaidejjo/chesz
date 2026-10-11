@@ -11,6 +11,7 @@ import chess.engine.moves
 import chess.engine.person
 import chess.engine.san
 import chess.main
+import chess.tui.backend
 import chess.tui.board_view
 import chess.tui.img
 import chess.tui.pick
@@ -466,6 +467,19 @@ func view_image_mode_blank() {
         }
         .none => panic("startpos rejected")
     }
+}
+
+@test
+func backend_env_matrix() {
+    assert_eq(backend.pick("", "", "1234", ""), backend.BK_KITTY)
+    assert_eq(backend.pick("", "WezTerm", "", ""), backend.BK_ITERM)
+    assert_eq(backend.pick("", "iTerm.app", "", ""), backend.BK_ITERM)
+    assert_eq(backend.pick("", "vscode", "", ""), backend.BK_ITERM)
+    assert_eq(backend.pick("", "ghostty", "", ""), backend.BK_KITTY)
+    assert_eq(backend.pick("xterm-kitty", "", "", ""), backend.BK_KITTY)
+    assert_eq(backend.pick("", "", "", "1"), backend.BK_GLYPH)
+    assert_eq(backend.pick("xterm-256color", "", "", ""), backend.BK_UNDECIDED)
+    assert_eq(backend.pick("", "", "", ""), backend.BK_UNDECIDED)
 }
 
 @test

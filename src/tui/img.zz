@@ -10,6 +10,7 @@ import std.term
 import std.time
 
 import chess.engine.board
+import chess.tui.backend
 import chess.tui.pieces
 import tui.screen
 
@@ -192,14 +193,85 @@ func place(id: int, x: int, y: int) {
     emit("\e_Ga=p,i={id},c=7,r=2,C=1\e\\")
 }
 
-pub func show_board(p: board.Pos, ox: int, oy: int) {
+// iTerm2 inline images (WezTerm, iTerm2, VSCode, Warp, Tabby):
+// one OSC per square, no ids, no chunking — resent every frame.
+
+pub func iterm_seq(b64: str) -> str {
+    "\e]1337;File=inline=1;width=7;height=2;preserveAspectRatio=0:" + b64 + chr(7)
+}
+
+func full_b64(v: int) -> [str] {
+    chunks_for(v)
+}
+
+func place_iterm(v: int, x: int, y: int) {
+    screen.goto(x, y)
+    cs := full_b64(v)
+    out := ""
+    i := 0
+    while i < len(cs) {
+        out = out + cs[i]
+        i = i + 1
+    }
+    emit(iterm_seq(out))
+}
+
+func env_line(key: str, val: str) -> str {
+    if val == "" {
+        key + "=(unset)"
+    } else {
+        key + "=" + val
+    }
+}
+
+// yazi-style `ya env`: everything needed to see the decision.
+
+pub func diagnose() -> [str] {
+    out := []
+    out = vec.push(out, env_line("TERM", backend.term_val()))
+    out = vec.push(out, env_line("TERM_PROGRAM", backend.prog_val()))
+    out = vec.push(out, env_line("KITTY_WINDOW_ID", backend.kitty_val()))
+    out = vec.push(out, env_line("WT_SESSION", backend.wt_val()))
+    out = vec.push(out, env_line("TMUX", backend.tmux_val()))
+    out = vec.push(out, env_line("ZELLIJ_SESSION_NAME", backend.zel_val()))
+    b := backend.detect()
+    if b == backend.BK_KITTY {
+        out = vec.push(out, "backend=kitty(env)")
+    } else {
+        if b == backend.BK_ITERM {
+            out = vec.push(out, "backend=iterm2(env)")
+        } else {
+            if b == backend.BK_GLYPH {
+                out = vec.push(out, "backend=glyphs(env)")
+            } else {
+                if supported() {
+                    out = vec.push(out, "backend=kitty(probe)")
+                } else {
+                    out = vec.push(out, "backend=glyphs(probe)")
+                }
+            }
+        }
+    }
+    out
+}
+
+// All occupied squares; be 1 kitty placements, 2 iTerm2 inline.
+// Cursor/selected squares stay text (highlights must stay visible).
+
+pub func show_board(p: board.Pos, ox: int, oy: int, cur: int, sel: int, be: int) {
     sq := 0
     while sq < 64 {
         v := p.b[sq]
-        if v != 0 {
+        if v != 0 && sq != cur && sq != sel {
             f := board.file_of(sq)
             r := board.rank_of(sq)
-            place(id_for(v), ox + 3 + f * 7, oy + 1 + (7 - r) * 2)
+            x := ox + 3 + f * 7
+            y := oy + 1 + (7 - r) * 2
+            if be == 2 {
+                place_iterm(v, x, y)
+            } else {
+                place(id_for(v), x, y)
+            }
         }
         sq = sq + 1
     }
