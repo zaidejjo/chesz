@@ -267,6 +267,7 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
     }
     if be == backend.BK_KITTY {
         img.transmit_all()
+        img.drain_stale()
     }
     if be != backend.BK_GLYPH {
         mode = 4

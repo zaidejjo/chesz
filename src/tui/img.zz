@@ -163,9 +163,9 @@ func transmit(id: int, chunks: [str]) {
         last := i + 1 >= len(chunks)
         if i == 0 {
             if last {
-                emit("\e_Gi={id},f=100,a=t,m=0;{chunks[i]}\e\\")
+                emit("\e_Gi={id},f=100,a=t,m=0,q=2;{chunks[i]}\e\\")
             } else {
-                emit("\e_Gi={id},f=100,a=t,m=1;{chunks[i]}\e\\")
+                emit("\e_Gi={id},f=100,a=t,m=1,q=2;{chunks[i]}\e\\")
             }
         } else {
             if last {
@@ -180,6 +180,32 @@ func transmit(id: int, chunks: [str]) {
 
 // Delete every visible placement (redraws place fresh).
 
+pub func drain_stale() {
+    n := 0
+    more := true
+    while more && n < 200 {
+        match term.poll(0) {
+            .ok(v) => {
+                if v {
+                    match term.read_key() {
+                        .ok(_) => {
+                            n = n + 1
+                        },
+                        .err(_) => {
+                            more = false
+                        },
+                    }
+                } else {
+                    more = false
+                }
+            },
+            .err(_) => {
+                more = false
+            },
+        }
+    }
+}
+
 pub func clear() {
     emit("\e_Ga=d\e\\")
     term.flush()
@@ -190,7 +216,7 @@ pub func clear() {
 
 func place(id: int, x: int, y: int) {
     screen.goto(x, y)
-    emit("\e_Ga=p,i={id},c=7,r=2,C=1\e\\")
+    emit("\e_Ga=p,i={id},c=7,r=2,C=1,q=2\e\\")
 }
 
 // iTerm2 inline images (WezTerm, iTerm2, VSCode, Warp, Tabby):
