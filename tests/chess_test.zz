@@ -18,6 +18,7 @@ import chesz.main as app
 import chesz.tui.board_view
 import chesz.tui.browse
 import chesz.tui.game
+import chesz.tui.mouse
 import chesz.tui.pick
 import chesz.uci.uci
 import tui.keys as tkeys
@@ -585,7 +586,7 @@ func clock_format() {
 }
 
 func report_frame(evals: [int], sans: [str], played: [int], wms: int) -> game.Frame {
-    st := game.Frame{pos: board.setup(), hist: [], sans: sans, played: played, cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: wms, bms: 60000, inc: 0, turn_ms: 0, evals: evals}
+    st := game.Frame{pos: board.setup(), hist: [], sans: sans, played: played, cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: wms, bms: 60000, inc: 0, turn_ms: 0, evals: evals}
     st
 }
 
@@ -850,6 +851,26 @@ func board_themes() {
         }
         .none => panic("startpos rejected")
     }
+}
+
+@test
+func mouse_hit_testing() {
+    assert_eq(mouse.is_mouse([2000, 0, 36, 16]), true)
+    assert_eq(mouse.is_mouse([101]), false)
+    assert_eq(mouse.is_mouse([2001]), false)
+    // ox=4, oy=2, no bar: e2 lives at x=36, y=16.
+    assert_eq(mouse.board_sq(36, 16, 4, 2, false), 12)
+    // a8 top-left cell corner.
+    assert_eq(mouse.board_sq(8, 4, 4, 2, false), 56)
+    // h1 bottom-right cell corner.
+    assert_eq(mouse.board_sq(63, 19, 4, 2, false), 7)
+    // Border, footer and margins miss.
+    assert_eq(mouse.board_sq(4, 2, 4, 2, false), 0 - 1)
+    assert_eq(mouse.board_sq(36, 21, 4, 2, false), 0 - 1)
+    assert_eq(mouse.board_sq(1, 1, 4, 2, false), 0 - 1)
+    // Bar prefix shifts two columns.
+    assert_eq(mouse.board_sq(38, 16, 4, 2, true), 12)
+    assert_eq(mouse.board_sq(8, 16, 4, 2, true), 0 - 1)
 }
 
 @test

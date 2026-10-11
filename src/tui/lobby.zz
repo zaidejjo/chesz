@@ -16,6 +16,7 @@ import chesz.engine.stats
 import chesz.tui.board_view
 import chesz.tui.browse
 import chesz.tui.game
+import chesz.tui.mouse
 import chesz.tui.pick
 import chesz.tui.puzz
 import chesz.tui.watch
@@ -164,9 +165,11 @@ pub func run() -> bool {
     }
     raw_on()
     defer raw_off()
+    mouse.enable()
     again := true
     while again {
         raw_on()
+        mouse.enable()
         c := pick.pick("ZZ Chess 0.2.0", ["Play vs engine", "Two humans (hotseat)", "Load PGN game", "Puzzles", "Watch engine vs engine", "Quit"])
         if c == 0 {
             side := color_palette()
@@ -175,6 +178,7 @@ pub func run() -> bool {
                 if !played {
                     again = false
                 }
+                mouse.enable()
             }
         } else {
             if c == 1 {
@@ -182,15 +186,18 @@ pub func run() -> bool {
                 if !played {
                     again = false
                 }
+                mouse.enable()
             } else {
                 if c == 2 {
                     load_pgn_flow()
+                    mouse.enable()
                 } else {
                     if c == 3 {
                         puzzled := puzz.run()
                         if !puzzled {
                             again = false
                         }
+                        mouse.enable()
                     } else {
                         if c == 4 {
                             w := engine_palette()
@@ -199,6 +206,7 @@ pub func run() -> bool {
                             if !watched {
                                 again = false
                             }
+                            mouse.enable()
                         } else {
                             again = false
                         }
@@ -207,5 +215,6 @@ pub func run() -> bool {
             }
         }
     }
+    mouse.disable()
     true
 }

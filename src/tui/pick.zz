@@ -8,6 +8,7 @@ import std.str
 import std.vec
 
 import chesz.tui.board_view
+import chesz.tui.mouse
 import toast.win
 import tui.keys as tkeys
 import tui.screen
@@ -102,14 +103,24 @@ pub func pick(title: str, options: [str]) -> int {
         screen.clear()
         screen.write(str.join(frame, "\r\n"))
         screen.flush()
-        k := tkeys.read()
-        if k == tkeys.enter() {
-            return sel
+        ev := mouse.read()
+        if mouse.is_mouse(ev) {
+            if ev[1] == 0 {
+                idx := (ev[3] - 1 - oy) - 2
+                if idx >= 0 && idx < len(options) {
+                    return idx
+                }
+            }
+        } else {
+            k := ev[0]
+            if k == tkeys.enter() {
+                return sel
+            }
+            if k == tkeys.esc() || k == tkeys.eof() {
+                return 0 - 1
+            }
+            sel = step(sel, len(options), k)
         }
-        if k == tkeys.esc() || k == tkeys.eof() {
-            return 0 - 1
-        }
-        sel = step(sel, len(options), k)
     }
     0 - 1
 }

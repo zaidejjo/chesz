@@ -30,7 +30,7 @@ func draw_puzzle(p: board.Pos, cursor: int, selected: int, targets: [int], idx: 
     side = vec.push(side, "")
     side = vec.push(side, "arrows/hjkl move · enter select")
     side = vec.push(side, "q skip puzzle")
-    game.draw_frame(rows, side)
+    _g := game.draw_frame(rows, side)
 }
 
 func queenish(legal: [int], from: int, to: int) -> int {

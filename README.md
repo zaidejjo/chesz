@@ -40,6 +40,7 @@ colors (Rematch).
 |--------------|-----------------------------------|
 | arrows/hjkl  | Move the cursor                   |
 | Enter/Space  | Select a piece · play the move    |
+| Click        | Select a piece · play the move    |
 | ?            | Coach hint                        |
 | u            | Take back (1 ply hotseat, 2 vs AI)|
 | e            | Eval bar on/off                   |

@@ -21,6 +21,7 @@ import chesz.engine.pgn
 import chesz.engine.san
 import chesz.engine.stats
 import chesz.tui.board_view
+import chesz.tui.mouse
 import chesz.tui.pick
 import toast.toast
 import tui.keys as tkeys
@@ -39,6 +40,8 @@ pub struct Frame {
     hint: str,
     hlast: int,
     after: int,
+    m_ox: int,
+    m_oy: int,
     show_bar: bool,
     bar_cp: int,
     bar_pct: int,
@@ -55,11 +58,11 @@ func fresh_frame(human_side: int) -> Frame {
     if human_side == 0 - 1 {
         cur = 52
     }
-    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
+    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
 }
 
 func replay(played: [int]) -> Frame {
-    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
+    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
     i := 0
     while i < len(played) {
         st.sans = vec.push(st.sans, san.notation(st.pos, played[i]))
@@ -244,7 +247,7 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int
     out
 }
 
-pub func draw_frame(rows: [str], side: [str]) {
+pub func draw_frame(rows: [str], side: [str]) -> [int] {
     cols := 80
     rows_n := 24
     sz := screen.size()
@@ -286,15 +289,19 @@ pub func draw_frame(rows: [str], side: [str]) {
     screen.clear()
     screen.write(str.join(frame, "\r\n"))
     screen.flush()
+    [ox, oy]
 }
 
-func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int, style: int, src: str, theme: int) {
+func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int, style: int, src: str, theme: int) -> Frame {
     rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode, style, theme)
     if st.show_bar {
         rows = board_view.with_bar(rows, st.bar_pct, mode)
     }
     side := panel(st, eng, human_side, extra, mode, style, src)
-    draw_frame(rows, side)
+    g := draw_frame(rows, side)
+    st.m_ox = g[0]
+    st.m_oy = g[1]
+    st
 }
 
 pub func do_move(st: Frame, m: int) -> Frame {
@@ -484,7 +491,7 @@ func game_loop(st: Frame, eng: person.Engine, human_side: int, duo: bool, mode: 
             if fl == 0 {
                 line = person.result_line(res)
             }
-            draw(st, eng, hs, line, mode, style, src, theme)
+            st = draw(st, eng, hs, line, mode, style, src, theme)
             c := pick.pick(line, ["Review", "Rematch", "Done"])
             if c == 0 {
                 st.after = 1
@@ -503,7 +510,7 @@ func game_loop(st: Frame, eng: person.Engine, human_side: int, duo: bool, mode: 
                     quit = true
                 }
             } else {
-                draw(st, eng, hs, "thinking… (" + eng.name + " d" + str(eng.depth) + " " + str(eng.movems) + "ms)", mode, style, src, theme)
+                st = draw(st, eng, hs, "thinking… (" + eng.name + " d" + str(eng.depth) + " " + str(eng.movems) + "ms)", mode, style, src, theme)
                 m := book.probe(st.pos)
                 dt := 0 - 1
                 if m == 0 {
@@ -556,6 +563,7 @@ func finish(st: Frame, eng: person.Engine, human_side: int, duo: bool, white: st
     style := board_view.resolve_style()
     src := board_view.style_source()
     theme := board_view.resolve_theme()
+    mouse.enable()
     st = game_loop(st, eng, human_side, duo, mode, style, src, theme)
     if st.after == 1 {
         review_loop(st)
@@ -566,6 +574,7 @@ func finish(st: Frame, eng: person.Engine, human_side: int, duo: bool, white: st
             st.after = 0
         }
     }
+    mouse.disable()
     screen.exit()
     opp := ""
     delta := 0
@@ -760,44 +769,59 @@ func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, styl
     }
     done := false
     while !done {
-        draw(st, eng, human_side, "", mode, style, src, theme)
-        k := tkeys.read()
-        if k == tkeys.eof() || k == tkeys.ctrl_c() {
-            st.cursor = 0 - 1000
-            done = true
-        } else {
-            if k == 113 {
-                if pick.pick("Resign?", ["Resign", "Keep playing"]) == 0 {
-                    st.cursor = 0 - 1000
-                    done = true
+        st = draw(st, eng, human_side, "", mode, style, src, theme)
+        ev := mouse.read()
+        if mouse.is_mouse(ev) {
+            if ev[1] == 0 {
+                sq := mouse.board_sq(ev[2], ev[3], st.m_ox, st.m_oy, st.show_bar)
+                if sq >= 0 {
+                    st.cursor = sq
+                    st = press(st, human_side)
+                    if st.selected == 0 - 2 {
+                        st.selected = 0 - 1
+                        done = true
+                    }
                 }
+            }
+        } else {
+            k := ev[0]
+            if k == tkeys.eof() || k == tkeys.ctrl_c() {
+                st.cursor = 0 - 1000
+                done = true
             } else {
-                if k == tkeys.esc() {
-                    st.selected = 0 - 1
-                    st.targets = []
+                if k == 113 {
+                    if pick.pick("Resign?", ["Resign", "Keep playing"]) == 0 {
+                        st.cursor = 0 - 1000
+                        done = true
+                    }
                 } else {
-                    if k == 104 || k == 106 || k == 107 || k == 108 || k == tkeys.up() || k == tkeys.down() || k == tkeys.left() || k == tkeys.right() {
-                        st.cursor = board_view.step_cursor(st.cursor, key_dx(k), key_dy(k))
+                    if k == tkeys.esc() {
+                        st.selected = 0 - 1
+                        st.targets = []
                     } else {
-                        if k == tkeys.enter() || k == 32 {
-                            st = press(st, human_side)
-                            if st.selected == 0 - 2 {
-                                st.selected = 0 - 1
-                                done = true
-                            }
+                        if k == 104 || k == 106 || k == 107 || k == 108 || k == tkeys.up() || k == tkeys.down() || k == tkeys.left() || k == tkeys.right() {
+                            st.cursor = board_view.step_cursor(st.cursor, key_dx(k), key_dy(k))
                         } else {
-                            if k == 63 {
-                                st.hint = hint_for(st)
+                            if k == tkeys.enter() || k == 32 {
+                                st = press(st, human_side)
+                                if st.selected == 0 - 2 {
+                                    st.selected = 0 - 1
+                                    done = true
+                                }
                             } else {
-                                if k == 117 {
-                                    if duo {
-                                        st = undo_n(st, human_side, 1)
-                                    } else {
-                                        st = undo(st, human_side)
-                                    }
+                                if k == 63 {
+                                    st.hint = hint_for(st)
                                 } else {
-                                    if k == 101 {
-                                        st.show_bar = !st.show_bar
+                                    if k == 117 {
+                                        if duo {
+                                            st = undo_n(st, human_side, 1)
+                                        } else {
+                                            st = undo(st, human_side)
+                                        }
+                                    } else {
+                                        if k == 101 {
+                                            st.show_bar = !st.show_bar
+                                        }
                                     }
                                 }
                             }

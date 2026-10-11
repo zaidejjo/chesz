@@ -1,0 +1,170 @@
+// Mouse clicks via SGR 1006 tracking. read() shares stdin with the
+// keyboard and returns one event: [key] for keys (same codes as
+// tkeys), [2000, button, x, y] for presses, [2001] for releases and
+// anything unrecognized-but-consumed. Button 0 is left; callers
+// ignore the rest. Enable/disable are idempotent escapes — every
+// screen owner arms on entry and disarms on exit.
+
+import std.term
+import std.vec
+
+import tui.screen
+
+pub func enable() {
+    screen.write("\e[?1000h\e[?1006h")
+    screen.flush()
+}
+
+pub func disable() {
+    screen.write("\e[?1000l\e[?1006l")
+    screen.flush()
+}
+
+pub func is_mouse(ev: [int]) -> bool {
+    len(ev) == 4 && ev[0] == 2000
+}
+
+func raw_byte() -> int {
+    match term.read_key() {
+        .ok(k) => k
+        .err(_) => 0 - 1
+    }
+}
+
+func waiting() -> bool {
+    match term.poll(50) {
+        .ok(v) => v
+        .err(_) => false
+    }
+}
+
+// Consume to the end of a CSI sequence we do not decode (modifier
+// arrows and friends), so no stray bytes pollute the next read.
+
+func skip_csi() -> [int] {
+    b := raw_byte()
+    if b >= 64 && b <= 126 {
+        return [27]
+    }
+    if b == 0 - 1 {
+        return [27]
+    }
+    skip_csi()
+}
+
+func read_sgr() -> [int] {
+    nums := []
+    cur := 0
+    press := false
+    done := false
+    live := true
+    while live {
+        b := raw_byte()
+        if b == 77 {
+            press = true
+            done = true
+        } else {
+            if b == 109 {
+                done = true
+            } else {
+                if b == 59 {
+                    nums = vec.push(nums, cur)
+                    cur = 0
+                } else {
+                    if b >= 48 && b <= 57 {
+                        cur = cur * 10 + (b - 48)
+                    } else {
+                        live = false
+                    }
+                }
+            }
+        }
+        if done {
+            live = false
+        }
+    }
+    if !done {
+        return [27]
+    }
+    nums = vec.push(nums, cur)
+    if len(nums) < 3 {
+        return [27]
+    }
+    if press {
+        [2000, nums[0], nums[1], nums[2]]
+    } else {
+        [2001]
+    }
+}
+
+pub func read() -> [int] {
+    b := raw_byte()
+    if b != 27 {
+        return [b]
+    }
+    if !waiting() {
+        return [27]
+    }
+    c := raw_byte()
+    if c != 91 {
+        return [27]
+    }
+    d := raw_byte()
+    if d == 60 {
+        return read_sgr()
+    }
+    if d == 65 {
+        return [1002]
+    }
+    if d == 66 {
+        return [1003]
+    }
+    if d == 67 {
+        return [1001]
+    }
+    if d == 68 {
+        return [1000]
+    }
+    if d == 49 {
+        return [1004]
+    }
+    if d == 51 {
+        return [1006]
+    }
+    if d == 52 {
+        return [1005]
+    }
+    if d == 53 {
+        return [1007]
+    }
+    if d == 54 {
+        return [1008]
+    }
+    if d >= 49 && d <= 57 {
+        return skip_csi()
+    }
+    [d]
+}
+
+// Board hit-test on the composited frame: (x, y) are 1-based terminal
+// cells, (ox, oy) the board origin draw_frame used, bar adds its 2
+// prefix columns. Returns the square or -1 (works in both the wide
+// side-by-side and the narrow stacked layouts — the rows are identical,
+// only the origin moves).
+
+pub func board_sq(x: int, y: int, ox: int, oy: int, bar: bool) -> int {
+    vy := y - 1 - oy
+    if vy < 1 || vy > 16 {
+        return 0 - 1
+    }
+    r := 7 - (vy - 1) / 2
+    pre := 3
+    if bar {
+        pre = 5
+    }
+    vx := x - 1 - ox - pre
+    if vx < 0 || vx >= 56 {
+        return 0 - 1
+    }
+    r * 8 + vx / 7
+}

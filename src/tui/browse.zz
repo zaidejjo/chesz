@@ -11,6 +11,7 @@ import std.str
 import std.vec
 
 import chesz.tui.board_view
+import chesz.tui.mouse
 import tui.keys as tkeys
 import tui.screen
 
@@ -91,10 +92,11 @@ func draw_browser(dir: str, names: [str], sel: int) {
     rows := []
     rows = vec.push(rows, "Open PGN — " + dir)
     rows = vec.push(rows, "")
+    start := 0
     if len(names) == 0 {
         rows = vec.push(rows, "(empty — esc cancels)")
     } else {
-        start := sel - 7
+        start = sel - 7
         if start < 0 {
             start = 0
         }
@@ -146,6 +148,7 @@ func draw_browser(dir: str, names: [str], sel: int) {
     screen.clear()
     screen.write(str.join(frame, "\r\n"))
     screen.flush()
+    [ox, oy, start]
 }
 
 pub func browse(start: str) -> str {
@@ -162,43 +165,56 @@ pub func browse(start: str) -> str {
         if sel >= len(names) {
             sel = 0
         }
-        draw_browser(dir, names, sel)
-        k := tkeys.read()
-        if k == tkeys.enter() {
-            if len(names) > 0 {
-                full := join_path(dir, names[sel])
-                if fs.is_dir(full) {
-                    dir = full
-                    sel = 0
-                    _saved := board_view.set_last_dir(dir)
-                    sel = sel
-                } else {
-                    picked = full
-                    live = false
+        g := draw_browser(dir, names, sel)
+        go := false
+        ev := mouse.read()
+        if mouse.is_mouse(ev) {
+            if ev[1] == 0 && len(names) > 0 {
+                idx := (ev[3] - 1 - g[1]) - 2 + g[2]
+                if idx >= 0 && idx < len(names) {
+                    sel = idx
+                    go = true
                 }
             }
         } else {
-            if k == tkeys.esc() || k == tkeys.eof() {
-                live = false
+            k := ev[0]
+            if k == tkeys.enter() {
+                go = true
             } else {
-                if k == tkeys.up() || k == 107 {
-                    if sel > 0 && len(names) > 0 {
-                        sel = sel - 1
-                    }
+                if k == tkeys.esc() || k == tkeys.eof() {
+                    live = false
                 } else {
-                    if k == tkeys.down() || k == 106 {
-                        if sel + 1 < len(names) {
-                            sel = sel + 1
+                    if k == tkeys.up() || k == 107 {
+                        if sel > 0 && len(names) > 0 {
+                            sel = sel - 1
                         }
                     } else {
-                        if k == 8 || k == 127 || k == tkeys.left() {
-                            dir = parent_of(dir)
-                            sel = 0
-                            _saved := board_view.set_last_dir(dir)
-                            sel = sel
+                        if k == tkeys.down() || k == 106 {
+                            if sel + 1 < len(names) {
+                                sel = sel + 1
+                            }
+                        } else {
+                            if k == 8 || k == 127 || k == tkeys.left() {
+                                dir = parent_of(dir)
+                                sel = 0
+                                _saved := board_view.set_last_dir(dir)
+                                sel = sel
+                            }
                         }
                     }
                 }
+            }
+        }
+        if go && len(names) > 0 {
+            full := join_path(dir, names[sel])
+            if fs.is_dir(full) {
+                dir = full
+                sel = 0
+                _saved := board_view.set_last_dir(dir)
+                sel = sel
+            } else {
+                picked = full
+                live = false
             }
         }
     }
