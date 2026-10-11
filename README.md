@@ -74,7 +74,7 @@ d_zz build -o /tmp/chess src/main.zz
 printf 'uci\nisready\nposition startpos\ngo depth 6\nquit\n' | /tmp/chess uci
 ```
 
-## Config: ~/.config/chesz.json
+## Config: ~/.config/chesz/config.json
 
 First launch creates it with defaults (never overwrites):
 

@@ -428,7 +428,11 @@ pub func resolve_style() -> int {
             return s
         }
     }
-    s := file_style(home_dir() + "/.config/chesz.json")
+    s := file_style(config_path())
+    if s >= 0 {
+        return s
+    }
+    s = file_style(home_dir() + "/.config/chesz.json")
     if s >= 0 {
         return s
     }
@@ -442,15 +446,22 @@ pub func resolve_style() -> int {
 // First-run setup: create ~/.config/chesz.json with defaults when no
 // config exists yet. Never overwrites.
 
+pub func config_path() -> str {
+    home_dir() + "/.config/chesz/config.json"
+}
+
 pub func ensure_config() -> str {
-    cfg := home_dir() + "/.config/chesz.json"
+    cfg := config_path()
     if fs.exists(cfg) {
         return cfg
+    }
+    if fs.exists(home_dir() + "/.config/chesz.json") {
+        return home_dir() + "/.config/chesz.json"
     }
     if fs.exists(home_dir() + "/.config/chess.json") {
         return home_dir() + "/.config/chess.json"
     }
-    match fs.mkdir_all(home_dir() + "/.config") {
+    match fs.mkdir_all(home_dir() + "/.config/chesz") {
         .ok(_) => 0
         .err(_) => 0 - 1
     }
