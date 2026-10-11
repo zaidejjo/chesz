@@ -9,16 +9,16 @@
 import std.time
 
 import ask
-import chess.engine.ai
-import chess.engine.board
-import chess.engine.book
-import chess.engine.fen
-import chess.engine.moves
-import chess.engine.person
-import chess.engine.san
-import chess.tui.game
-import chess.tui.lobby
-import chess.uci.uci
+import chesz.engine.ai
+import chesz.engine.board
+import chesz.engine.book
+import chesz.engine.fen
+import chesz.engine.moves
+import chesz.engine.person
+import chesz.engine.san
+import chesz.tui.game
+import chesz.tui.lobby
+import chesz.uci.uci
 
 func perft(p: board.Pos, d: int) -> int {
     if d == 0 {

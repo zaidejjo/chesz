@@ -9,14 +9,14 @@ import std.str
 import std.time
 import std.vec
 
-import chess.engine.ai
-import chess.engine.board
-import chess.engine.book
-import chess.engine.moves
-import chess.engine.person
-import chess.engine.san
-import chess.tui.board_view
-import chess.tui.pick
+import chesz.engine.ai
+import chesz.engine.board
+import chesz.engine.book
+import chesz.engine.moves
+import chesz.engine.person
+import chesz.engine.san
+import chesz.tui.board_view
+import chesz.tui.pick
 import toast.toast
 import tui.keys as tkeys
 import tui.screen
@@ -66,8 +66,8 @@ func side_name(side: int) -> str {
     }
 }
 
-func gfx_line() -> str {
-    st := board_view.art_style()
+func gfx_line(style: int) -> str {
+    st := style
     if st == 1 {
         "Pieces: glyphs"
     } else {
@@ -79,11 +79,11 @@ func gfx_line() -> str {
     }
 }
 
-func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int) -> [str] {
+func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int, style: int) -> [str] {
     out := []
     out = vec.push(out, "ZZ Chess 0.2.0")
     out = vec.push(out, eng.name + " (" + str(eng.elo) + ")")
-    out = vec.push(out, gfx_line())
+    out = vec.push(out, gfx_line(style))
     res := person.result(st.pos, st.hist)
     if res != 0 {
         out = vec.push(out, "")
@@ -163,9 +163,9 @@ pub func draw_frame(rows: [str], side: [str]) {
     screen.flush()
 }
 
-func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int) {
-    rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode)
-    side := panel(st, eng, human_side, extra, mode)
+func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int, style: int) {
+    rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode, style)
+    side := panel(st, eng, human_side, extra, mode, style)
     draw_frame(rows, side)
 }
 
@@ -257,22 +257,24 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
     defer screen.exit()
     screen.hide()
     mode := screen.mode()
+    board_view.ensure_config()
+    style := board_view.resolve_style()
     st := fresh_frame(human_side)
     quit := false
     while !quit {
         res := person.result(st.pos, st.hist)
         if res != 0 {
-            draw(st, eng, human_side, person.result_line(res), mode)
+            draw(st, eng, human_side, person.result_line(res), mode, style)
             pick.pick(person.result_line(res), ["OK"])
             quit = true
         } else {
             if st.pos.side == human_side {
-                st = human_frame(st, eng, human_side, mode)
+                st = human_frame(st, eng, human_side, mode, style)
                 if st.cursor == 0 - 1000 {
                     quit = true
                 }
             } else {
-                draw(st, eng, human_side, "thinking… (" + eng.name + " d" + str(eng.depth) + " " + str(eng.movems) + "ms)", mode)
+                draw(st, eng, human_side, "thinking… (" + eng.name + " d" + str(eng.depth) + " " + str(eng.movems) + "ms)", mode, style)
                 m := book.probe(st.pos)
                 dt := 0 - 1
                 if m == 0 {
@@ -293,10 +295,10 @@ pub func run(eng: person.Engine, human_side: int) -> bool {
 // One human turn: cursor loop until a move is made. Returns the frame;
 // cursor -1000 signals quit-to-menu (checked by run()).
 
-func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int) -> Frame {
+func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, style: int) -> Frame {
     done := false
     while !done {
-        draw(st, eng, human_side, "", mode)
+        draw(st, eng, human_side, "", mode, style)
         k := tkeys.read()
         if k == tkeys.eof() || k == tkeys.ctrl_c() {
             st.cursor = 0 - 1000

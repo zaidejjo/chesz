@@ -7,7 +7,7 @@
 import std.str
 import std.vec
 
-import chess.tui.board_view
+import chesz.tui.board_view
 import toast.win
 import tui.keys as tkeys
 import tui.screen

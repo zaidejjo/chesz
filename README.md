@@ -74,6 +74,20 @@ d_zz build -o /tmp/chess src/main.zz
 printf 'uci\nisready\nposition startpos\ngo depth 6\nquit\n' | /tmp/chess uci
 ```
 
+## Config: ~/.config/chesz.json
+
+First launch creates it with defaults (never overwrites):
+
+```json
+{
+  "pieces": "letters"
+}
+```
+
+`pieces` picks the set: `letters` (default — works everywhere),
+`ascii` (character art), `glyphs` (Unicode). `CHESS_PIECES` env wins
+over the file when both are set.
+
 ## Pieces: ASCII art, glyphs, letters
 
 Three tiers, worst first: **ASCII character art** by default (7×4

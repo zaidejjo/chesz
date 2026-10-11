@@ -5,10 +5,10 @@
 
 import std.term
 
-import chess.engine.person
-import chess.tui.game
-import chess.tui.pick
-import chess.tui.watch
+import chesz.engine.person
+import chesz.tui.game
+import chesz.tui.pick
+import chesz.tui.watch
 import tui.screen
 
 // Palettes read raw bytes (Enter must arrive as 13, not cooked \n).

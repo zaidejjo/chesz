@@ -8,12 +8,12 @@ import std.str
 import std.time
 import std.vec
 
-import chess.engine.ai
-import chess.engine.board
-import chess.engine.fen
-import chess.engine.moves
-import chess.engine.person
-import chess.engine.san
+import chesz.engine.ai
+import chesz.engine.board
+import chesz.engine.fen
+import chesz.engine.moves
+import chesz.engine.person
+import chesz.engine.san
 
 func opt_int(text: str, fallback: int) -> int {
     match int(text) {

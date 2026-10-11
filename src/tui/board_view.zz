@@ -5,10 +5,12 @@
 
 import std.colors
 import std.env
+import std.fs
+import std.json
 import std.vec
 
-import chess.engine.board
-import chess.engine.moves
+import chesz.engine.board
+import chesz.engine.moves
 
 pub func has_sq(v: [int], sq: int) -> bool {
     i := 0
@@ -267,7 +269,7 @@ func mark_bg(sq: int, text: str, cursor: int, selected: int, targets: [int], las
     inner
 }
 
-func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, mode: int, piece_line: bool) -> str {
+func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, mode: int, piece_line: bool, style: int) -> str {
     head := "  │"
     if piece_line {
         head = rank_label(r, mode) + vbar(mode)
@@ -283,8 +285,7 @@ func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], 
         v := p.b[sq]
         art := "       "
         if true {
-            st := art_style()
-            if mode == 0 || st == 2 {
+            if mode == 0 || style == 2 {
                 if piece_line {
                     g := " "
                     if v != 0 {
@@ -293,7 +294,7 @@ func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], 
                     art = "   " + g + "   "
                 }
             } else {
-                if st == 1 {
+                if style == 1 {
                     if piece_line {
                         art = "   " + glyph_for(v, mode) + "   "
                     }
@@ -321,7 +322,7 @@ func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], 
 // block: pure math on visible widths (ANSI stripped), so highlights
 // never shift columns. ox/oy pad left/top.
 
-pub func render(p: board.Pos, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, mode: int) -> [str] {
+pub func render(p: board.Pos, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, mode: int, style: int) -> [str] {
     check_king := 0 - 1
     if moves.in_check(p) {
         check_king = moves.king_sq(p.b, p.side)
@@ -330,8 +331,8 @@ pub func render(p: board.Pos, cursor: int, selected: int, targets: [int], last_f
     rows = vec.push(rows, frame_top(mode))
     r := 7
     while r >= 0 {
-        rows = vec.push(rows, cell_row(p, r, cursor, selected, targets, last_from, last_to, check_king, mode, false))
-        rows = vec.push(rows, cell_row(p, r, cursor, selected, targets, last_from, last_to, check_king, mode, true))
+        rows = vec.push(rows, cell_row(p, r, cursor, selected, targets, last_from, last_to, check_king, mode, false, style))
+        rows = vec.push(rows, cell_row(p, r, cursor, selected, targets, last_from, last_to, check_king, mode, true, style))
         r = r - 1
     }
     rows = vec.push(rows, frame_bottom(mode))
@@ -371,21 +372,93 @@ func frame_bottom(mode: int) -> str {
 // Piece style: ascii character art by default (byte-clean, works
 // everywhere); glyphs or letters via CHESS_PIECES=glyphs|letters.
 
-pub func art_style() -> int {
-    match env.get_var("CHESS_PIECES") {
-        .some(v) => {
-            if v == "glyphs" {
-                1
+// Piece style, resolved ONCE per game (never per cell — file IO):
+// CHESS_PIECES env wins, then ~/.config/chess.json (chesz.json
+// fallback), then letters. Styles: 0 ascii, 1 glyphs, 2 letters.
+
+pub func style_of(name: str) -> int {
+    if name == "glyphs" {
+        1
+    } else {
+        if name == "letters" {
+            2
+        } else {
+            if name == "ascii" {
+                0
             } else {
-                if v == "letters" {
-                    2
-                } else {
-                    0
-                }
+                0 - 1
             }
         }
-        .none => 0
     }
+}
+
+pub func style_in_json(text: str) -> int {
+    j := json.parse_or_null(text)
+    if !json.is_object(j) {
+        return 0 - 1
+    }
+    v := json.path_get_or(j, "pieces", json.null())
+    if !json.is_string(v) {
+        return 0 - 1
+    }
+    style_of(json.as_str(v))
+}
+
+func home_dir() -> str {
+    match env.home_dir() {
+        .some(h) => h
+        .none => "."
+    }
+}
+
+func file_style(path: str) -> int {
+    if !fs.exists(path) {
+        return 0 - 1
+    }
+    match fs.read_to_string(path) {
+        .ok(t) => style_in_json(t)
+        .err(_) => 0 - 1
+    }
+}
+
+pub func resolve_style() -> int {
+    if let .some(v) = env.get_var("CHESS_PIECES") {
+        s := style_of(v)
+        if s >= 0 {
+            return s
+        }
+    }
+    s := file_style(home_dir() + "/.config/chesz.json")
+    if s >= 0 {
+        return s
+    }
+    s = file_style(home_dir() + "/.config/chess.json")
+    if s >= 0 {
+        return s
+    }
+    2
+}
+
+// First-run setup: create ~/.config/chesz.json with defaults when no
+// config exists yet. Never overwrites.
+
+pub func ensure_config() -> str {
+    cfg := home_dir() + "/.config/chesz.json"
+    if fs.exists(cfg) {
+        return cfg
+    }
+    if fs.exists(home_dir() + "/.config/chess.json") {
+        return home_dir() + "/.config/chess.json"
+    }
+    match fs.mkdir_all(home_dir() + "/.config") {
+        .ok(_) => 0
+        .err(_) => 0 - 1
+    }
+    match fs.write(cfg, "{\n  \"pieces\": \"letters\"\n}\n") {
+        .ok(_) => 0
+        .err(_) => 0 - 1
+    }
+    cfg
 }
 
 // 7x4 character art, shared silhouette both sides (ink reads side).

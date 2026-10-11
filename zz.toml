@@ -1,5 +1,5 @@
 [package]
-name = "chess"
+name = "chesz"
 version = "0.2.0"
 
 [dependencies]

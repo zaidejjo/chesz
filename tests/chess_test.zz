@@ -3,18 +3,18 @@
 
 import std.str
 
-import chess.engine.ai
-import chess.engine.book
-import chess.engine.eval
-import chess.engine.fen
-import chess.engine.moves
-import chess.engine.person
-import chess.engine.san
-import chess.main
-import chess.tui.board_view
-import chess.tui.pick
+import chesz.engine.ai
+import chesz.engine.book
+import chesz.engine.eval
+import chesz.engine.fen
+import chesz.engine.moves
+import chesz.engine.person
+import chesz.engine.san
+import chesz.main
+import chesz.tui.board_view
+import chesz.tui.pick
 import tui.keys as tkeys
-import chess.uci.uci
+import chesz.uci.uci
 
 @test
 func fen_startpos_roundtrip() {
@@ -377,7 +377,7 @@ func loud_matches_pseudo() {
 func view_renders_big_plain_board() {
     match fen.parse(fen.startpos()) {
         .some(p) => {
-            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 0)
+            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 0, 2)
             // Border + 16 cell rows + border + footer.
             assert_eq(len(rows), 19)
             i := 0
@@ -397,7 +397,7 @@ func view_renders_big_plain_board() {
 func view_compose_centers() {
     match fen.parse(fen.startpos()) {
         .some(p) => {
-            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 0)
+            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 0, 2)
             frame := board_view.compose(rows, ["hi"], 4, 2)
             assert_eq(len(frame), 21)
             assert_eq(str.starts_with(frame[2], "    "), true)
@@ -466,7 +466,7 @@ func view_ascii_pieces() {
             assert_eq(board_view.ascii_art(4, 0), "|_|_|_|")
             assert_eq(board_view.ascii_art(0 - 6, 1), " _|_|_ ")
             assert_eq(board_view.ascii_art(0, 0), "       ")
-            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 3)
+            rows := board_view.render(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 3, 0)
             assert_eq(len(rows), 19)
             assert_eq(str.contains(rows[1], "|_|_|_|"), true)
             assert_eq(str.contains(rows[13], "(_)"), true)
@@ -497,4 +497,16 @@ func tray_and_movelist() {
     assert_eq(len(mv), 2)
     assert_eq(mv[0], "1... e5")
     assert_eq(mv[1], "2. Nf3")
+}
+
+@test
+func style_config() {
+    assert_eq(board_view.style_of("glyphs"), 1)
+    assert_eq(board_view.style_of("letters"), 2)
+    assert_eq(board_view.style_of("ascii"), 0)
+    assert_eq(board_view.style_of("nope"), 0 - 1)
+    assert_eq(board_view.style_in_json("{\"pieces\": \"glyphs\"}"), 1)
+    assert_eq(board_view.style_in_json("{\"pieces\": \"chaos\"}"), 0 - 1)
+    assert_eq(board_view.style_in_json("not json"), 0 - 1)
+    assert_eq(board_view.style_in_json("{\"nope\": 1}"), 0 - 1)
 }
