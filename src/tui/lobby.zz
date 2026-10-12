@@ -20,6 +20,7 @@ import chesz.tui.mouse
 import chesz.tui.pick
 import chesz.tui.puzz
 import chesz.tui.watch
+import tui.keys as tkeys
 import tui.screen
 
 // Palettes read raw bytes (Enter must arrive as 13, not cooked \n).
@@ -161,23 +162,62 @@ func load_pgn_flow() {
 
 func theme_palette() {
     names := board_view.all_theme_names()
-    cur := board_view.theme_name(board_view.resolve_theme())
-    opts := []
-    i := 0
-    while i < len(names) {
-        mark := "  "
-        if names[i] == cur {
-            mark = "* "
-        }
-        opts = vec.push(opts, mark + names[i])
-        i = i + 1
-    }
-    c := pick.pick("Board theme", opts)
-    if c < 0 || c >= len(names) {
+    if len(names) == 0 {
         return
     }
-    _s := board_view.set_theme(names[c])
-    _s = _s
+    cur := board_view.theme_name(board_view.resolve_theme())
+    style := board_view.resolve_style()
+    mode := screen.mode()
+    pos := board.setup()
+    sel := 0
+    i := 0
+    while i < len(names) {
+        if names[i] == cur {
+            sel = i
+        }
+        i = i + 1
+    }
+    live := true
+    while live {
+        id := board_view.theme_id(names[sel])
+        rows := board_view.render(pos, 0 - 1, 0 - 1, [], 0 - 1, 0 - 1, mode, style, id, board_view.load_custom(id))
+        side := []
+        side = vec.push(side, "Board theme (now: " + cur + ")")
+        side = vec.push(side, "")
+        i = 0
+        while i < len(names) {
+            mark := "  "
+            if i == sel {
+                mark = "> "
+            }
+            side = vec.push(side, mark + names[i])
+            i = i + 1
+        }
+        side = vec.push(side, "")
+        side = vec.push(side, "arrows choose · enter keep · esc back")
+        game.draw_frame(rows, side)
+        k := tkeys.read()
+        if k == tkeys.enter() {
+            _s := board_view.set_theme(names[sel])
+            _s = _s
+            live = false
+        } else {
+            if k == tkeys.esc() || k == tkeys.eof() {
+                live = false
+            } else {
+                if k == tkeys.up() || k == 107 {
+                    sel = sel - 1
+                    if sel < 0 {
+                        sel = len(names) - 1
+                    }
+                } else {
+                    if k == tkeys.down() || k == 106 {
+                        sel = (sel + 1) % len(names)
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub func run() -> bool {

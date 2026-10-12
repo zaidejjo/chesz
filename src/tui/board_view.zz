@@ -602,7 +602,7 @@ pub func resolve_theme() -> int {
 
 // Builtin id, or 100+ for a user file, or -1.
 
-func theme_id(name: str) -> int {
+pub func theme_id(name: str) -> int {
     t := theme_of(name)
     if t >= 0 {
         return t

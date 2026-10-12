@@ -27,6 +27,7 @@ Launch `chesz` and the lobby offers everything:
 | Load PGN game  | Browse `.pgn` files, continue playing   |
 | Puzzles        | Mate-in-1 pack, three tries each        |
 | Board theme    | 15 built-ins + your own files            |
+
 | Watch          | Engine vs engine, any pairing           |
 
 Before a game you pick a clock — Casual, Blitz 5+0, or Rapid 15+10.
@@ -100,7 +101,8 @@ All under `~/.config/chesz/`:
 
 Boards: lichess, green, slate, blue, catppuccin, latte, tokyo-night,
 dracula, nord, gruvbox, solarized-dark, solarized-light, monokai,
-everforest, rose-pine — lobby Board theme entry, config, or CHESS_THEME. Your own live in
+everforest, rose-pine — lobby Board theme entry, config, or CHESS_THEME. The lobby Board theme entry previews each board live as you
+move. Your own live in
 ~/.config/chesz/themes/<name>.json:
 
 ```json
