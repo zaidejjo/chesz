@@ -357,10 +357,10 @@ pub func flip_sq(sq: int) -> int {
 }
 
 pub func render(p: board.Pos, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, mode: int, style: int, theme: int, pal: [int]) -> [str] {
-    render_ex(p, cursor, selected, targets, last_from, last_to, mode, style, theme, pal, false)
+    render_ex(p, cursor, selected, targets, last_from, last_to, mode, style, theme, pal, false, false)
 }
 
-pub func render_ex(p: board.Pos, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, mode: int, style: int, theme: int, pal: [int], flipped: bool) -> [str] {
+pub func render_ex(p: board.Pos, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, mode: int, style: int, theme: int, pal: [int], flipped: bool, blind: bool) -> [str] {
     check_king := 0 - 1
     if moves.in_check(p) {
         check_king = moves.king_sq(p.b, p.side)
@@ -373,8 +373,8 @@ pub func render_ex(p: board.Pos, cursor: int, selected: int, targets: [int], las
         if flipped {
             lr = dr
         }
-        rows = vec.push(rows, cell_row_ex(p, lr, cursor, selected, targets, last_from, last_to, check_king, mode, false, style, theme, pal, flipped))
-        rows = vec.push(rows, cell_row_ex(p, lr, cursor, selected, targets, last_from, last_to, check_king, mode, true, style, theme, pal, flipped))
+        rows = vec.push(rows, cell_row_ex(p, lr, cursor, selected, targets, last_from, last_to, check_king, mode, false, style, theme, pal, flipped, blind))
+        rows = vec.push(rows, cell_row_ex(p, lr, cursor, selected, targets, last_from, last_to, check_king, mode, true, style, theme, pal, flipped, blind))
         dr = dr + 1
     }
     rows = vec.push(rows, frame_bottom(mode))
@@ -382,7 +382,7 @@ pub func render_ex(p: board.Pos, cursor: int, selected: int, targets: [int], las
     rows
 }
 
-func cell_row_ex(p: board.Pos, lr: int, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, mode: int, piece_line: bool, style: int, theme: int, pal: [int], flipped: bool) -> str {
+func cell_row_ex(p: board.Pos, lr: int, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, mode: int, piece_line: bool, style: int, theme: int, pal: [int], flipped: bool, blind: bool) -> str {
     head := "  │"
     if piece_line {
         head = rank_label(lr, mode) + vbar(mode)
@@ -400,6 +400,11 @@ func cell_row_ex(p: board.Pos, lr: int, cursor: int, selected: int, targets: [in
         }
         sq := lr * 8 + lf
         v := p.b[sq]
+        if blind {
+            // Blindfold: pieces hidden, pure calculation. Highlights
+            // (cursor, targets, last move) stay so the board is playable.
+            v = 0
+        }
         cell := "       "
         if true {
             if mode == 0 || style == 2 {

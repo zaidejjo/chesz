@@ -8,8 +8,10 @@ import std.str
 import std.term
 import std.vec
 
+import ask
 import chesz.engine.board
 import chesz.engine.moves
+import chesz.engine.netproto
 import chesz.engine.person
 import chesz.engine.pgn
 import chesz.engine.san
@@ -21,6 +23,7 @@ import chesz.tui.browse
 import chesz.tui.game
 import chesz.tui.lesson
 import chesz.tui.mouse
+import chesz.tui.netgame
 import chesz.tui.pick
 import chesz.tui.puzz
 import chesz.tui.watch
@@ -298,6 +301,61 @@ func tournament_flow() {
     pick.pick(msg, ["OK"])
 }
 
+// Online LAN game: host deals color + clock on a port, or join a
+// host:port. Address input needs cooked stdin, so drop raw mode for
+// the prompt and re-arm after (same dance as game/watch exits).
+
+func online_flow() {
+    c := pick.pick("Online (LAN)", ["Host a game", "Join a game"])
+    if c == 0 {
+        side := color_palette()
+        if side == 0 {
+            return
+        }
+        clock := clock_palette()
+        port := netproto.default_port()
+        p := pick.pick("Port", ["8377 (default)", "Custom…"])
+        if p == 1 {
+            raw_off()
+            text := ask.text("Port", "8377", |s: str| len(s) >= 2)
+            raw_on()
+            mouse.enable()
+            match int(text) {
+                .some(n) => {
+                    if n > 0 && n < 65536 {
+                        port = n
+                    } else {
+                        port = port
+                    }
+                }
+                .none => port = port
+            }
+        }
+        played := netgame.host(port, side, clock)
+        if !played {
+            _o := pick.pick("Online needs a terminal", ["OK"])
+            _o = _o
+        }
+        mouse.enable()
+    } else {
+        if c == 1 {
+            raw_off()
+            addr := ask.text("Host address (host:port)", "127.0.0.1:8377", |s: str| len(s) >= 3)
+            raw_on()
+            mouse.enable()
+            if addr == "" {
+                return
+            }
+            played := netgame.join(addr)
+            if !played {
+                _o := pick.pick("Online needs a terminal", ["OK"])
+                _o = _o
+            }
+            mouse.enable()
+        }
+    }
+}
+
 func theme_palette() {
     names := board_view.all_theme_names()
     if len(names) == 0 {
@@ -370,7 +428,7 @@ pub func run() -> bool {
         raw_on()
         mouse.enable()
         title := "Chesz · " + stats.profile()
-        c := pick.pick(title, ["Play vs engine", "Two humans (hotseat)", "Load PGN game", "Puzzles", "Lessons", "Board theme", "Watch engine vs engine", "Tournament", "Resume game", "Quit"])
+        c := pick.pick(title, ["Play vs engine", "Two humans (hotseat)", "Load PGN game", "Puzzles", "Lessons", "Board theme", "Watch engine vs engine", "Tournament", "Resume game", "Play online (LAN)", "Quit"])
         if c == 0 {
             side := color_palette()
             if side != 0 {
@@ -434,7 +492,12 @@ pub func run() -> bool {
                                             resume_flow()
                                             mouse.enable()
                                         } else {
-                                            again = false
+                                            if c == 9 {
+                                                online_flow()
+                                                mouse.enable()
+                                            } else {
+                                                again = false
+                                            }
                                         }
                                     }
                                 }

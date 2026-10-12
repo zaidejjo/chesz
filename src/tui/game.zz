@@ -56,6 +56,7 @@ pub struct Frame {
     evals: [int],
     flipped: bool,
     zen: bool,
+    blind: bool,
 }
 
 func fresh_frame(human_side: int) -> Frame {
@@ -65,11 +66,11 @@ func fresh_frame(human_side: int) -> Frame {
         cur = 52
         flip = true
     }
-    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: [], flipped: flip, zen: false}
+    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: [], flipped: flip, zen: false, blind: false}
 }
 
 func replay(played: [int]) -> Frame {
-    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: [], flipped: false, zen: false}
+    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: [], flipped: false, zen: false, blind: false}
     i := 0
     while i < len(played) {
         st.sans = vec.push(st.sans, san.notation(st.pos, played[i]))
@@ -256,9 +257,13 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int
             last = st.sans[len(st.sans) - 1]
         }
         out = vec.push(out, "Last: " + last + "  (" + str(len(st.played)) + " ply)")
-        cap := board_view.captured(st.pos, mode)
-        out = vec.push(out, cap[0])
-        out = vec.push(out, cap[1])
+        if st.blind {
+            out = vec.push(out, "Captured: hidden")
+        } else {
+            cap := board_view.captured(st.pos, mode)
+            out = vec.push(out, cap[0])
+            out = vec.push(out, cap[1])
+        }
         mv := board_view.movelist(st.sans, len(st.played), 4)
         i := 0
         while i < len(mv) {
@@ -275,7 +280,7 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int
     out = vec.push(out, "")
     out = vec.push(out, "arrows/hjkl move · enter select")
     out = vec.push(out, "? coach hint · u undo · q resign · e eval")
-    out = vec.push(out, "f flip · z zen · s suspend")
+    out = vec.push(out, "f flip · z zen · s suspend · b blindfold")
     out
 }
 
@@ -340,7 +345,7 @@ pub func draw_frame(rows: [str], side: [str]) -> [int] {
 }
 
 func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int, style: int, src: str, theme: int) -> Frame {
-    rows := board_view.render_ex(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode, style, theme, st.tpal, st.flipped)
+    rows := board_view.render_ex(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode, style, theme, st.tpal, st.flipped, st.blind)
     if st.show_bar {
         rows = board_view.with_bar(rows, st.bar_pct, mode)
     }
@@ -376,9 +381,10 @@ pub func do_move(st: Frame, m: int) -> Frame {
 
 // Clock deduct: the mover pays the elapsed think plus gains the
 // increment. No live ticking — the blocking key reader cannot redraw
-// mid-thought — so time settles when the move lands.
+// mid-thought — so time settles when the move lands. Pub: the LAN
+// game reuses it so both clocks stay in sync.
 
-func tick_clock(st: Frame) -> Frame {
+pub func tick_clock(st: Frame) -> Frame {
     if st.wms < 0 {
         return st
     }
@@ -796,7 +802,7 @@ func review_loop(st: Frame) {
             p = moves.make(p, st.played[k])
             k = k + 1
         }
-        rows := board_view.render_ex(p, 0 - 1, 0 - 1, [], 0 - 1, 0 - 1, mode, style, theme, st.tpal, st.flipped)
+        rows := board_view.render_ex(p, 0 - 1, 0 - 1, [], 0 - 1, 0 - 1, mode, style, theme, st.tpal, st.flipped, st.blind)
         label := "Start position"
         if idx > 0 {
             label = move_no(idx - 1) + st.sans[idx - 1]
@@ -881,7 +887,12 @@ pub func threat_line(p: board.Pos, human_side: int) -> str {
 // cursor -1000 signals quit-to-menu (checked by run()).
 
 func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, style: int, src: str, duo: bool, theme: int) -> Frame {
-    th := threat_line(st.pos, human_side)
+    // Blindfold suppresses the threat radar (it reads the position).
+    // The explicit ? hint still answers when asked.
+    th := ""
+    if !st.blind {
+        th = threat_line(st.pos, human_side)
+    }
     if len(th) > 0 {
         if len(st.hint) > 0 {
             st.hint = st.hint + " · " + th
@@ -963,6 +974,15 @@ func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, styl
                                                         } else {
                                                             st.hint = "Suspend failed"
                                                         }
+                                                    } else {
+                                                        if k == 98 {
+                                                            st.blind = !st.blind
+                                                            if st.blind {
+                                                                st.hint = "Blindfold on — pieces hidden"
+                                                            } else {
+                                                                st.hint = ""
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -1036,6 +1056,7 @@ func undo_n(st: Frame, human_side: int, n: int) -> Frame {
     st2.tpal = st.tpal
     st2.flipped = st.flipped
     st2.zen = st.zen
+    st2.blind = st.blind
     // Eval history runs parallel to played (+1 seed): drop the same tail
     // so the report never reads a removed position.
     st2.evals = slice_moves(st.evals, len(st.evals) - n)

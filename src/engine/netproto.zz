@@ -1,0 +1,120 @@
+// LAN protocol (line-oriented, \n-terminated):
+//   hello chesz/1 <white|black>   handshake, host first
+//   clock <wms> <bms> <inc>       host deals the clock, guest adopts
+//   move <coord> <wms> <bms>      coord like e2e4/e7e8q; clocks are the
+//                                 mover's post-move values, adopted by the
+//                                 receiver so both clocks stay identical
+//   resign                        immediate loss for the sender
+// Pure build/parse cores (unit-tested); tui/netgame owns the sockets.
+
+import std.str
+
+pub func default_port() -> int {
+    8377
+}
+
+pub func addr_host(text: str) -> str {
+    parts := str.split(text, ":")
+    if len(parts) >= 2 && len(parts[0]) > 0 {
+        parts[0]
+    } else {
+        t := str.trim(text)
+        if t == "" {
+            "127.0.0.1"
+        } else {
+            t
+        }
+    }
+}
+
+func opt_int(s: str, fallback: int) -> int {
+    match int(s) {
+        .some(n) => n
+        .none => fallback
+    }
+}
+
+pub func addr_port(text: str) -> int {
+    parts := str.split(text, ":")
+    if len(parts) >= 2 {
+        p := opt_int(parts[len(parts) - 1], 0 - 1)
+        if p > 0 && p < 65536 {
+            return p
+        }
+    }
+    default_port()
+}
+
+pub func hello_build(color: str) -> str {
+    "hello chesz/1 " + color + "\n"
+}
+
+// "white" / "black" / "" when malformed.
+
+pub func hello_color(line: str) -> str {
+    parts := str.split(str.trim(line), " ")
+    if len(parts) == 3 && parts[0] == "hello" && parts[1] == "chesz/1" {
+        if parts[2] == "white" || parts[2] == "black" {
+            return parts[2]
+        }
+    }
+    ""
+}
+
+pub func clock_build(wms: int, bms: int, inc: int) -> str {
+    "clock " + str(wms) + " " + str(bms) + " " + str(inc) + "\n"
+}
+
+// [wms, bms, inc], [] when malformed.
+
+pub func clock_parse(line: str) -> [int] {
+    parts := str.split(str.trim(line), " ")
+    if len(parts) != 4 || parts[0] != "clock" {
+        return []
+    }
+    [opt_int(parts[1], 0 - 1), opt_int(parts[2], 0 - 1), opt_int(parts[3], 0)]
+}
+
+pub func move_build(coord: str, wms: int, bms: int) -> str {
+    "move " + coord + " " + str(wms) + " " + str(bms) + "\n"
+}
+
+pub func kind_of(line: str) -> str {
+    parts := str.split(str.trim(line), " ")
+    if len(parts) == 0 {
+        ""
+    } else {
+        parts[0]
+    }
+}
+
+pub func move_coord(line: str) -> str {
+    parts := str.split(str.trim(line), " ")
+    if len(parts) >= 2 && parts[0] == "move" {
+        parts[1]
+    } else {
+        ""
+    }
+}
+
+pub func move_wms(line: str) -> int {
+    parts := str.split(str.trim(line), " ")
+    if len(parts) >= 4 && parts[0] == "move" {
+        opt_int(parts[2], 0 - 1)
+    } else {
+        0 - 1
+    }
+}
+
+pub func move_bms(line: str) -> int {
+    parts := str.split(str.trim(line), " ")
+    if len(parts) >= 4 && parts[0] == "move" {
+        opt_int(parts[3], 0 - 1)
+    } else {
+        0 - 1
+    }
+}
+
+pub func split_addr(text: str) -> [str] {
+    [addr_host(text), str(addr_port(text))]
+}

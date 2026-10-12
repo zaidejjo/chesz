@@ -1,0 +1,598 @@
+// Online LAN games: host/join over TCP, clock-synced. The host deals
+// the clock; every move line carries the mover's post-move clocks and
+// the receiver adopts them, so both clocks stay identical (network
+// latency never accumulates). Turn-based blocking reads — no polling
+// needed. Net games are unrated (no ladder/record writes).
+
+import std.env
+import std.fs
+import std.net
+import std.str
+import std.time
+import std.vec
+
+import chesz.engine.board
+import chesz.engine.book
+import chesz.engine.moves
+import chesz.engine.netproto
+import chesz.engine.person
+import chesz.engine.pgn
+import chesz.engine.san
+import chesz.tui.board_view
+import chesz.tui.game
+import chesz.tui.mouse
+import chesz.tui.pick
+import tui.keys as tkeys
+import tui.screen
+
+// End codes in st.after: 0 table result, 3 I resigned, 4 opp resigned,
+// 5 disconnect/bad protocol.
+
+func color_str(side: int) -> str {
+    if side == 1 {
+        "white"
+    } else {
+        "black"
+    }
+}
+
+func side_name(side: int) -> str {
+    if side == 1 {
+        "White"
+    } else {
+        "Black"
+    }
+}
+
+func base_frame(my_side: int, clock: [int]) -> game.Frame {
+    st := game.from_moves([])
+    st.wms = clock[0]
+    st.bms = clock[1]
+    st.inc = clock[2]
+    st.flipped = my_side == 0 - 1
+    st.cursor = 12
+    if my_side == 0 - 1 {
+        st.cursor = 52
+    }
+    st.turn_ms = time.now_ms()
+    st
+}
+
+func panel(st: game.Frame, white: str, black: str, me: int, extra: str, mode: int, style: int, src: str) -> [str] {
+    if st.zen {
+        out := []
+        cl := game.clock_line(st)
+        if len(cl) > 0 {
+            out = vec.push(out, cl)
+        }
+        out = vec.push(out, "z zen off")
+        return out
+    }
+    out := []
+    out = vec.push(out, "Chesz — LAN")
+    out = vec.push(out, "White: " + white + "  Black: " + black)
+    if style == 1 {
+        out = vec.push(out, "Pieces: glyphs [" + src + "]")
+    } else {
+        if style == 2 {
+            out = vec.push(out, "Pieces: letters [" + src + "]")
+        } else {
+            out = vec.push(out, "Pieces: ASCII art [" + src + "]")
+        }
+    }
+    cl := game.clock_line(st)
+    if len(cl) > 0 {
+        out = vec.push(out, cl)
+    }
+    op := book.name_of(st.pos)
+    if len(op) > 0 {
+        out = vec.push(out, "Opening: " + op)
+    }
+    if st.show_bar {
+        out = vec.push(out, board_view.eval_line(st.bar_cp, st.bar_pct, st.bar_mate))
+    }
+    if len(st.evals) > 1 {
+        out = vec.push(out, "Graph " + board_view.eval_graph(st.evals, 24))
+    }
+    res := person.result(st.pos, st.hist)
+    if res != 0 {
+        out = vec.push(out, "")
+        out = vec.push(out, person.result_line(res))
+    } else {
+        out = vec.push(out, "You play " + side_name(me))
+        out = vec.push(out, "To move: " + side_name(st.pos.side))
+        last := "—"
+        if len(st.sans) > 0 {
+            last = st.sans[len(st.sans) - 1]
+        }
+        out = vec.push(out, "Last: " + last + "  (" + str(len(st.played)) + " ply)")
+        if st.blind {
+            out = vec.push(out, "Captured: hidden")
+        } else {
+            cap := board_view.captured(st.pos, mode)
+            out = vec.push(out, cap[0])
+            out = vec.push(out, cap[1])
+        }
+        mv := board_view.movelist(st.sans, len(st.played), 4)
+        i := 0
+        while i < len(mv) {
+            out = vec.push(out, mv[i])
+            i = i + 1
+        }
+        if len(st.hint) > 0 {
+            out = vec.push(out, st.hint)
+        }
+        if len(extra) > 0 {
+            out = vec.push(out, extra)
+        }
+    }
+    out = vec.push(out, "")
+    out = vec.push(out, "arrows/hjkl move · enter select")
+    out = vec.push(out, "? hint · q resign · e eval · f flip · z zen · b blind")
+    out
+}
+
+func draw(st: game.Frame, white: str, black: str, me: int, extra: str, mode: int, style: int, src: str, theme: int) -> game.Frame {
+    rows := board_view.render_ex(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode, style, theme, st.tpal, st.flipped, st.blind)
+    if st.show_bar {
+        rows = board_view.with_bar(rows, st.bar_pct, mode)
+    }
+    side := panel(st, white, black, me, extra, mode, style, src)
+    g := game.draw_frame(rows, side)
+    st.m_ox = g[0]
+    st.m_oy = g[1]
+    st
+}
+
+func pick_promo(legal: [int], from: int, to: int) -> int {
+    opts := board_view.find_moves(legal, from, to)
+    if len(opts) == 0 {
+        return 0
+    }
+    if moves.mv_promo(opts[0]) == 0 {
+        return opts[0]
+    }
+    c := pick.pick("Promote to", ["Queen", "Rook", "Bishop", "Knight"])
+    if c < 0 {
+        return 0
+    }
+    want := 5
+    if c == 1 {
+        want = 4
+    } else {
+        if c == 2 {
+            want = 3
+        } else {
+            if c == 3 {
+                want = 2
+            }
+        }
+    }
+    i := 0
+    while i < len(opts) {
+        if moves.mv_promo(opts[i]) == want {
+            return opts[i]
+        }
+        i = i + 1
+    }
+    opts[0]
+}
+
+// Enter/space: select own piece, or move. Completed move sets selected
+// to -2 (move-done sentinel).
+
+func press(st: game.Frame, me: int) -> game.Frame {
+    if st.selected < 0 {
+        v := st.pos.b[st.cursor]
+        if v * me > 0 {
+            st.selected = st.cursor
+            st.targets = board_view.targets_for(st.pos, st.cursor)
+        }
+        return st
+    }
+    if board_view.has_sq(st.targets, st.cursor) {
+        legal := moves.gen_legal(st.pos)
+        m := pick_promo(legal, st.selected, st.cursor)
+        if m != 0 {
+            st = game.do_move(st, m)
+            st.selected = 0 - 2
+            return st
+        }
+    }
+    v := st.pos.b[st.cursor]
+    if v * me > 0 {
+        st.selected = st.cursor
+        st.targets = board_view.targets_for(st.pos, st.cursor)
+    } else {
+        st.selected = 0 - 1
+        st.targets = []
+    }
+    st
+}
+
+func hint_for(st: game.Frame) -> str {
+    m := person.best_move_for(person.expert(), st.pos, st.hist)
+    if m == 0 {
+        ""
+    } else {
+        san.notation(st.pos, m)
+    }
+}
+
+// My turn: cursor loop until a move lands. cursor -1000 + after 3
+// means I resigned (quit-to-menu is resign over the wire).
+
+func my_turn(st: game.Frame, white: str, black: str, me: int, mode: int, style: int, src: str, theme: int) -> game.Frame {
+    st.hint = ""
+    done := false
+    while !done {
+        st = draw(st, white, black, me, "", mode, style, src, theme)
+        ev := mouse.read()
+        if mouse.is_mouse(ev) {
+            if ev[1] == 0 {
+                sq := mouse.board_sq_ex(ev[2], ev[3], st.m_ox, st.m_oy, st.show_bar, st.flipped)
+                if sq >= 0 {
+                    st.cursor = sq
+                    st = press(st, me)
+                    if st.selected == 0 - 2 {
+                        st.selected = 0 - 1
+                        done = true
+                    }
+                }
+            }
+        } else {
+            k := ev[0]
+            if k == tkeys.eof() || k == tkeys.ctrl_c() {
+                st.cursor = 0 - 1000
+                st.after = 3
+                done = true
+            } else {
+                if k == 113 {
+                    if pick.pick("Resign?", ["Resign", "Keep playing"]) == 0 {
+                        st.cursor = 0 - 1000
+                        st.after = 3
+                        done = true
+                    }
+                } else {
+                    if k == tkeys.esc() {
+                        st.selected = 0 - 1
+                        st.targets = []
+                    } else {
+                        if k == 104 || k == 106 || k == 107 || k == 108 || k == tkeys.up() || k == tkeys.down() || k == tkeys.left() || k == tkeys.right() {
+                            dx := 0
+                            dy := 0
+                            if k == tkeys.left() || k == 104 {
+                                dx = 0 - 1
+                            }
+                            if k == tkeys.right() || k == 108 {
+                                dx = 1
+                            }
+                            if k == tkeys.up() || k == 107 {
+                                dy = 1
+                            }
+                            if k == tkeys.down() || k == 106 {
+                                dy = 0 - 1
+                            }
+                            if st.flipped {
+                                dx = 0 - dx
+                                dy = 0 - dy
+                            }
+                            st.cursor = board_view.step_cursor(st.cursor, dx, dy)
+                        } else {
+                            if k == tkeys.enter() || k == 32 {
+                                st = press(st, me)
+                                if st.selected == 0 - 2 {
+                                    st.selected = 0 - 1
+                                    done = true
+                                }
+                            } else {
+                                if k == 63 {
+                                    st.hint = hint_for(st)
+                                } else {
+                                    if k == 101 {
+                                        st.show_bar = !st.show_bar
+                                    } else {
+                                        if k == 102 {
+                                            st.flipped = !st.flipped
+                                        } else {
+                                            if k == 122 {
+                                                st.zen = !st.zen
+                                            } else {
+                                                if k == 98 {
+                                                    st.blind = !st.blind
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    st
+}
+
+func send_line(s: tcp.stream, line: str) -> bool {
+    match s.write(line) {
+        .ok(_) => true
+        .err(_) => false
+    }
+}
+
+func recv_line(s: tcp.stream) -> str {
+    match s.read_line() {
+        .ok(line) => line
+        .err(_) => ""
+    }
+}
+
+// Opponent turn: blocking read. Adopt their clocks (exact sync),
+// stamp the turn. "" / illegal move / resign map to end codes.
+
+func opp_turn(st: game.Frame, s: tcp.stream, white: str, black: str, me: int, mode: int, style: int, src: str, theme: int) -> game.Frame {
+    st = draw(st, white, black, me, "waiting for opponent…", mode, style, src, theme)
+    line := recv_line(s)
+    if line == "" {
+        st.after = 5
+        return st
+    }
+    if netproto.kind_of(line) == "resign" {
+        st.after = 4
+        return st
+    }
+    if netproto.kind_of(line) != "move" {
+        st.after = 5
+        return st
+    }
+    m := san.parse_coord(netproto.move_coord(line), moves.gen_legal(st.pos))
+    if m == 0 {
+        st.after = 5
+        return st
+    }
+    st = game.do_move(st, m)
+    st.wms = netproto.move_wms(line)
+    st.bms = netproto.move_bms(line)
+    st.turn_ms = time.now_ms()
+    st.cursor = st.last_to
+    st
+}
+
+func net_loop(st: game.Frame, s: tcp.stream, white: str, black: str, me: int, mode: int, style: int, src: str, theme: int) -> game.Frame {
+    quit := false
+    while !quit {
+        fl := game.flagged(st)
+        res := person.result(st.pos, st.hist)
+        if fl != 0 || res != 0 {
+            line := ""
+            if fl == 1 {
+                line = "0-1 Black wins on time"
+            } else {
+                if fl == 2 {
+                    line = "1-0 White wins on time"
+                } else {
+                    line = person.result_line(res)
+                }
+            }
+            st = draw(st, white, black, me, line, mode, style, src, theme)
+            pick.pick(line, ["Done"])
+            quit = true
+        } else {
+            if st.pos.side == me {
+                before := len(st.played)
+                st = my_turn(st, white, black, me, mode, style, src, theme)
+                if st.after == 3 {
+                    send_line(s, "resign\n")
+                    quit = true
+                } else {
+                    if len(st.played) > before {
+                        m := st.played[len(st.played) - 1]
+                        if !send_line(s, netproto.move_build(board.move_name(m), st.wms, st.bms)) {
+                            st.after = 5
+                            quit = true
+                        }
+                    }
+                }
+            } else {
+                st = opp_turn(st, s, white, black, me, mode, style, src, theme)
+                if st.after == 4 || st.after == 5 {
+                    quit = true
+                }
+            }
+        }
+    }
+    st
+}
+
+func end_line(st: game.Frame) -> str {
+    if st.after == 3 {
+        "0-1 you resigned"
+    } else {
+        if st.after == 4 {
+            "1-0 opponent resigned"
+        } else {
+            if st.after == 5 {
+                "opponent disconnected"
+            } else {
+                game.result_str(st)
+            }
+        }
+    }
+}
+
+func games_home() -> str {
+    match env.home_dir() {
+        .some(h) => h + "/.config/chesz/games"
+        .none => "./chesz_games"
+    }
+}
+
+func finish_net(st: game.Frame, white: str, black: str) {
+    lines := game.report(st)
+    println("")
+    println("Chesz LAN — " + end_line(st) + " (unrated)")
+    i := 0
+    while i < len(lines) {
+        println(lines[i])
+        i = i + 1
+    }
+    if len(st.played) > 0 {
+        dir := games_home()
+        match fs.mkdir_all(dir) {
+            .ok(_) => 0
+            .err(_) => 0 - 1
+        }
+        res := pgn.result_of(person.result(st.pos, st.hist), game.flagged(st))
+        path := dir + "/net_" + str(time.now_ms()) + ".pgn"
+        match fs.write(path, pgn.build(white, black, st.sans, res)) {
+            .ok(_) => println("Saved PGN: " + path)
+            .err(_) => println("(PGN save failed)")
+        }
+        share := game.share_bundle(st, white, black)
+        if len(share) > 0 {
+            println("Shared: " + share)
+        }
+    }
+}
+
+func leave() {
+    mouse.disable()
+    screen.exit()
+}
+
+func close_quiet(s: tcp.stream) {
+    match s.close() {
+        .ok(_) => 0
+        .err(_) => 0 - 1
+    }
+}
+
+func enter_screen() -> bool {
+    if !screen.is_tty() {
+        return false
+    }
+    if !screen.enter() {
+        return false
+    }
+    screen.hide()
+    mouse.enable()
+    true
+}
+
+// Host: listen, accept one guest, deal color (own) + clock.
+
+pub func host(port: int, my_side: int, clock: [int]) -> bool {
+    if !enter_screen() {
+        return false
+    }
+    board_view.ensure_config()
+    style := board_view.resolve_style()
+    src := board_view.style_source()
+    theme := board_view.resolve_theme()
+    mode := screen.mode()
+    st := base_frame(my_side, clock)
+    st.tpal = board_view.load_custom(theme)
+    st = game.refresh_bar(st)
+    st.evals = [st.bar_cp]
+    st = draw(st, "Host", "Guest", my_side, "waiting for opponent on :" + str(port) + "…", mode, style, src, theme)
+    match net.tcp_listen("0.0.0.0:" + str(port)) {
+        .ok(listener) => {
+            match listener.accept() {
+                .ok(s) => {
+                    if !send_line(s, netproto.hello_build(color_str(my_side))) {
+                        pick.pick("Send failed", ["OK"])
+                        close_quiet(s)
+                        leave()
+                        return true
+                    }
+                    line := recv_line(s)
+                    if netproto.hello_color(line) == "" || netproto.hello_color(line) == color_str(my_side) {
+                        pick.pick("Handshake failed", ["OK"])
+                        close_quiet(s)
+                        leave()
+                        return true
+                    }
+                    send_line(s, netproto.clock_build(st.wms, st.bms, st.inc))
+                    st.turn_ms = time.now_ms()
+                    st = net_loop(st, s, "Host", "Guest", my_side, mode, style, src, theme)
+                    close_quiet(s)
+                    leave()
+                    finish_net(st, "Host", "Guest")
+                    true
+                }
+                .err(_) => {
+                    pick.pick("Nobody joined", ["OK"])
+                    leave()
+                    true
+                }
+            }
+        }
+        .err(_) => {
+            pick.pick("Cannot listen on :" + str(port), ["OK"])
+            leave()
+            true
+        }
+    }
+}
+
+// Join: connect, take the opposite color, adopt the host clock.
+
+pub func join(addr: str) -> bool {
+    if !enter_screen() {
+        return false
+    }
+    board_view.ensure_config()
+    style := board_view.resolve_style()
+    src := board_view.style_source()
+    theme := board_view.resolve_theme()
+    mode := screen.mode()
+    full := netproto.addr_host(addr) + ":" + str(netproto.addr_port(addr))
+    st := base_frame(1, [0 - 1, 0 - 1, 0])
+    st.tpal = board_view.load_custom(theme)
+    st = draw(st, "Host", "Guest", 1, "connecting to " + full + "…", mode, style, src, theme)
+    match net.tcp_connect(full, 5000) {
+        .ok(s) => {
+            line := recv_line(s)
+            host_color := netproto.hello_color(line)
+            if host_color == "" {
+                pick.pick("Handshake failed", ["OK"])
+                close_quiet(s)
+                leave()
+                return true
+            }
+            my_side := 1
+            if host_color == "white" {
+                my_side = 0 - 1
+            }
+            if !send_line(s, netproto.hello_build(color_str(my_side))) {
+                pick.pick("Send failed", ["OK"])
+                close_quiet(s)
+                leave()
+                return true
+            }
+            clocks := netproto.clock_parse(recv_line(s))
+            if len(clocks) != 3 {
+                pick.pick("Clock sync failed", ["OK"])
+                close_quiet(s)
+                leave()
+                return true
+            }
+            st = base_frame(my_side, clocks)
+            st.tpal = board_view.load_custom(theme)
+            st = game.refresh_bar(st)
+            st.evals = [st.bar_cp]
+            st = net_loop(st, s, "Host", "Guest", my_side, mode, style, src, theme)
+            close_quiet(s)
+            leave()
+            finish_net(st, "Host", "Guest")
+            true
+        }
+        .err(_) => {
+            pick.pick("Cannot connect to " + full, ["OK"])
+            leave()
+            true
+        }
+    }
+}

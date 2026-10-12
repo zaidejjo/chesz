@@ -30,6 +30,7 @@ Launch `chesz` and the lobby offers everything:
 | Board theme    | 15 built-ins + your own files            |
 | Tournament     | Round-robin vs all personalities + crosstable |
 | Resume game    | Continue the suspended game (S mid-game) |
+| Play online    | Host/join LAN games over TCP, clock-synced |
 
 | Watch          | Engine vs engine, any pairing           |
 
@@ -55,6 +56,7 @@ PGN + report + graph). Step through the finished game first
 | f            | Flip board (Black's view)         |
 | z            | Zen mode (board + clock only)     |
 | s            | Suspend game (resume tomorrow)    |
+| b            | Blindfold (pieces hidden)         |
 | q            | Resign · quit                     |
 
 Everything else is in `chesz --help`.
@@ -84,6 +86,8 @@ rated game.
 chesz                  lobby (the good stuff)
 chesz play             text game vs Club
 chesz tui [white|black] board game vs Club
+chesz host [port]      host a LAN game (guest joins you)
+chesz join <host:port> join a LAN game
 chesz ai               Club vs Club demo
 chesz gauntlet         Novice vs Club x4, Elo table
 chesz tournament       round-robin over every personality + crosstable

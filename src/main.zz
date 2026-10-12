@@ -19,6 +19,7 @@ import chesz.engine.book
 import chesz.engine.explore as explore_mod
 import chesz.engine.fen
 import chesz.engine.moves
+import chesz.engine.netproto
 import chesz.engine.person
 import chesz.engine.pgn
 import chesz.engine.san
@@ -26,6 +27,7 @@ import chesz.engine.tourney
 import chesz.tui.game
 import chesz.tui.lesson
 import chesz.tui.lobby
+import chesz.tui.netgame
 import chesz.uci.uci
 
 func perft(p: board.Pos, d: int) -> int {
@@ -560,6 +562,8 @@ func show_help() {
     println("  (no args)          lobby: play, hotseat, load PGN, puzzles, lessons, watch")
     println("  play               human (white) vs Club in plain text")
     println("  tui [white|black]  board UI vs Club (falls back to text)")
+    println("  host [port]        host a LAN game (guest joins you)")
+    println("  join <host:port>   join a LAN game")
     println("  ai                 Club vs Club demo, 40 plies")
     println("  gauntlet           Novice vs Club x4 with an Elo table")
     println("  tournament         round-robin over every personality + crosstable")
@@ -574,6 +578,42 @@ func show_help() {
     println("")
     println("board keys: arrows/hjkl move · enter select · ? hint · u undo")
     println("            q resign · e eval bar · f flip · z zen · s suspend")
+    println("            b blindfold · LAN: q resigns (no takebacks online)")
+}
+
+// Host setup in cooked mode (ask), then the TUI session deals the game.
+
+func host_cmd(args: [str]) {
+    port := netproto.default_port()
+    if len(args) > 1 {
+        match int(args[1]) {
+            .some(n) => {
+                if n > 0 && n < 65536 {
+                    port = n
+                } else {
+                    port = port
+                }
+            }
+            .none => port = port
+        }
+    }
+    side := ask.select("Play as", ["White", "Black"])
+    human := 1
+    if side == "Black" {
+        human = 0 - 1
+    }
+    pick := ask.select("Clock", ["Casual (no clock)", "Blitz 5+0", "Rapid 15+10"])
+    clock := [0 - 1, 0 - 1, 0]
+    if pick == "Blitz 5+0" {
+        clock = [300000, 300000, 0]
+    } else {
+        if pick == "Rapid 15+10" {
+            clock = [900000, 900000, 10000]
+        }
+    }
+    if !netgame.host(port, human, clock) {
+        println("online needs a terminal")
+    }
 }
 
 func main(args: [str]) {
@@ -613,6 +653,20 @@ func main(args: [str]) {
         }
         return
     }
+    if args[0] == "host" {
+        host_cmd(args)
+        return
+    }
+    if args[0] == "join" {
+        if len(args) < 2 {
+            println("usage: chesz join <host:port>")
+            return
+        }
+        if !netgame.join(args[1]) {
+            println("online needs a terminal")
+        }
+        return
+    }
     if args[0] == "uci" {
         uci.run()
         return
@@ -647,5 +701,5 @@ func main(args: [str]) {
         show_help()
         return
     }
-    println("usage: chesz [--help] | perft | ai | play | tui [white|black] | gauntlet | tournament | explore | lessons | uci | analyze [FEN] | fen FEN | pgn FILE")
+    println("usage: chesz [--help] | perft | ai | play | tui [white|black] | host [port] | join <host:port> | gauntlet | tournament | explore | lessons | uci | analyze [FEN] | fen FEN | pgn FILE")
 }
