@@ -1064,15 +1064,28 @@ pub func captured(p: board.Pos, mode: int) -> [str] {
 }
 
 // Last n plies, numbered ("12. Nf3"). total is the full ply count.
+// off scrolls the window back that many plies (PgUp/PgDn history).
 
 pub func movelist(sans: [str], total: int, n: int) -> [str] {
+    movelist_off(sans, total, n, 0)
+}
+
+pub func movelist_off(sans: [str], total: int, n: int, off: int) -> [str] {
     out := []
-    start := len(sans) - n
+    o := off
+    if o < 0 {
+        o = 0
+    }
+    if o > len(sans) {
+        o = len(sans)
+    }
+    end := len(sans) - o
+    start := end - n
     if start < 0 {
         start = 0
     }
     i := start
-    while i < len(sans) {
+    while i < end {
         ply := total - (len(sans) - i)
         num := ply / 2 + 1
         if ply % 2 == 0 {
@@ -1083,6 +1096,56 @@ pub func movelist(sans: [str], total: int, n: int) -> [str] {
         i = i + 1
     }
     out
+}
+
+// Material score from White's perspective, in pawns (N/B 3, R 5,
+// Q 9). One line for the side panel; even games say so.
+
+pub func material_line(p: board.Pos) -> str {
+    w := 0
+    b := 0
+    i := 0
+    while i < 64 {
+        v := p.b[i]
+        if v > 0 {
+            w = w + piece_val(v)
+        } else {
+            if v < 0 {
+                b = b + piece_val(0 - v)
+            }
+        }
+        i = i + 1
+    }
+    d := w - b
+    if d == 0 {
+        "Material: even"
+    } else {
+        if d > 0 {
+            "Material: White +" + str(d)
+        } else {
+            "Material: Black +" + str(0 - d)
+        }
+    }
+}
+
+func piece_val(pc: int) -> int {
+    if pc == 1 {
+        1
+    } else {
+        if pc == 2 || pc == 3 {
+            3
+        } else {
+            if pc == 4 {
+                5
+            } else {
+                if pc == 5 {
+                    9
+                } else {
+                    0
+                }
+            }
+        }
+    }
 }
 
 // Eval bar: white win-% as a 16-tall strip beside the board rows.

@@ -1,9 +1,11 @@
 // Mouse clicks via SGR 1006 tracking. read() shares stdin with the
 // keyboard and returns one event: [key] for keys (same codes as
-// tkeys), [2000, button, x, y] for presses, [2001] for releases and
-// anything unrecognized-but-consumed. Button 0 is left; callers
-// ignore the rest. Enable/disable are idempotent escapes — every
+// tkeys), [2000, button, x, y] for presses, [2001, button, x, y] for
+// releases and anything unrecognized-but-consumed. Button 0 is left;
+// callers ignore the rest. Enable/disable are idempotent escapes — every
 // screen owner arms on entry and disarms on exit.
+// read_timeout(ms) polls first and returns [1999] on timeout so clocks
+// can tick live (is_tick); the blocking read() stays for dumb loops.
 
 import std.term
 import std.vec
@@ -22,6 +24,14 @@ pub func disable() {
 
 pub func is_mouse(ev: [int]) -> bool {
     len(ev) == 4 && ev[0] == 2000
+}
+
+pub func is_release(ev: [int]) -> bool {
+    len(ev) == 4 && ev[0] == 2001
+}
+
+pub func is_tick(ev: [int]) -> bool {
+    len(ev) == 1 && ev[0] == 1999
 }
 
 func raw_byte() -> int {
@@ -93,8 +103,35 @@ func read_sgr() -> [int] {
     if press {
         [2000, nums[0], nums[1], nums[2]]
     } else {
-        [2001]
+        [2001, nums[0], nums[1], nums[2]]
     }
+}
+
+// Timed read: same decode as read() but returns [1999] when nothing
+// arrives within ms (50ms poll slices). Lets the game loop redraw
+// ticking clocks instead of freezing on a blocking key read.
+
+pub func read_timeout(ms: int) -> [int] {
+    left := ms
+    if left < 0 {
+        left = 0
+    }
+    while left > 0 {
+        step := 50
+        if step > left {
+            step = left
+        }
+        hit := false
+        match term.poll(step) {
+            .ok(v) => hit = v
+            .err(_) => hit = false
+        }
+        if hit {
+            return read()
+        }
+        left = left - step
+    }
+    [1999]
 }
 
 pub func read() -> [int] {

@@ -597,7 +597,7 @@ func clock_format() {
 }
 
 func report_frame(evals: [int], sans: [str], played: [int], wms: int) -> game.Frame {
-    st := game.Frame{pos: board.setup(), hist: [], sans: sans, played: played, cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: wms, bms: 60000, inc: 0, turn_ms: 0, evals: evals, flipped: false, zen: false, blind: false}
+    st := game.Frame{pos: board.setup(), hist: [], sans: sans, played: played, cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: wms, bms: 60000, inc: 0, turn_ms: 0, evals: evals, flipped: false, zen: false, blind: false, drawn: false, hist_scroll: 0, drag: 0 - 1}
     st
 }
 
@@ -1417,4 +1417,64 @@ func check_book(fen_text: str, coord: str) {
         }
         .none => panic("book FEN rejected: " + fen_text)
     }
+}
+
+@test
+func tui_panels_material_scroll() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            assert_eq(board_view.material_line(p), "Material: even")
+        }
+        .none => panic("startpos rejected")
+    }
+    match fen.parse("rnbqkbnr/ppp1pppp/8/3P4/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1") {
+        .some(p) => {
+            assert_eq(board_view.material_line(p), "Material: White +1")
+        }
+        .none => panic("capture FEN rejected")
+    }
+    mv := board_view.movelist_off(["e4", "e5", "Nf3", "Nc6", "Bb5"], 5, 2, 2)
+    assert_eq(len(mv), 2)
+    assert_eq(mv[0], "1... e5")
+    assert_eq(mv[1], "2. Nf3")
+    mv = board_view.movelist_off(["e4", "e5", "Nf3"], 3, 2, 0)
+    assert_eq(len(mv), 2)
+    assert_eq(mv[0], "1... e5")
+    assert_eq(mv[1], "2. Nf3")
+    mv = board_view.movelist_off(["e4"], 1, 4, 99)
+    assert_eq(len(mv), 0)
+}
+
+@test
+func tui_draw_clock_next() {
+    assert_eq(game.draw_accepts(0, 1), true)
+    assert_eq(game.draw_accepts(0 - 80, 0 - 1), true)
+    assert_eq(game.draw_accepts(0 - 81, 1), false)
+    assert_eq(game.draw_accepts(200, 0 - 1), false)
+    assert_eq(game.clock_text(60000, 60000, 0, 0), "Clock: W 1:00 · B 1:00")
+    assert_eq(game.clock_text(60000, 60000, 2000, 0), "Clock: W 1:00 · B 1:00 (+2)")
+    assert_eq(game.clock_text(0 - 1, 0, 0, 0), "")
+    low := game.clock_text(15000, 60000, 0, 0)
+    assert_eq(str.contains(low, "LOW"), true)
+    ok := game.clock_text(15000, 60000, 0, 1)
+    assert_eq(str.contains(ok, "Clock:"), true)
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            assert_eq(game.next_piece_sq(p.b, 1, 12), 13)
+            assert_eq(game.next_piece_sq(p.b, 1, 15), 0)
+        }
+        .none => panic("startpos rejected")
+    }
+    assert_eq(game.live_left(60000, 1000, 1500), 59500)
+    assert_eq(game.live_left(300, 1000, 5000), 0)
+    assert_eq(game.live_left(0 - 1, 1000, 5000), 0 - 1)
+}
+
+@test
+func tui_mouse_release_tick() {
+    assert_eq(mouse.is_mouse([2000, 0, 10, 5]), true)
+    assert_eq(mouse.is_release([2001, 0, 10, 5]), true)
+    assert_eq(mouse.is_release([2001]), false)
+    assert_eq(mouse.is_tick([1999]), true)
+    assert_eq(mouse.is_tick([27]), false)
 }

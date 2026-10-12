@@ -5,6 +5,7 @@
 // tui.dialog, and a toast.flash on check. Non-TTY callers get `false`
 // and should fall back to the ask flow in main.
 
+import std.colors
 import std.env
 import std.fs
 import std.str
@@ -58,6 +59,9 @@ pub struct Frame {
     flipped: bool,
     zen: bool,
     blind: bool,
+    drawn: bool,
+    hist_scroll: int,
+    drag: int,
 }
 
 func fresh_frame(human_side: int) -> Frame {
@@ -67,11 +71,11 @@ func fresh_frame(human_side: int) -> Frame {
         cur = 52
         flip = true
     }
-    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: [], flipped: flip, zen: false, blind: false}
+    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: [], flipped: flip, zen: false, blind: false, drawn: false, hist_scroll: 0, drag: 0 - 1}
 }
 
 func replay(played: [int]) -> Frame {
-    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: [], flipped: false, zen: false, blind: false}
+    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: [], flipped: false, zen: false, blind: false, drawn: false, hist_scroll: 0, drag: 0 - 1}
     i := 0
     while i < len(played) {
         st.sans = vec.push(st.sans, san.notation(st.pos, played[i]))
@@ -221,7 +225,7 @@ func gfx_line(style: int, src: str) -> str {
 
 func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int, style: int, src: str) -> [str] {
     if st.zen {
-        return zen_panel(st)
+        return zen_panel(st, mode)
     }
     out := []
     out = vec.push(out, "Chesz")
@@ -230,7 +234,7 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int
     } else {
         out = vec.push(out, eng.name + " (" + str(eng.elo) + ")")
     }
-    cl := clock_line(st)
+    cl := clock_text(st.wms, st.bms, st.inc, mode)
     if len(cl) > 0 {
         out = vec.push(out, cl)
     }
@@ -246,9 +250,13 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int
         out = vec.push(out, "Graph " + board_view.eval_graph(st.evals, 24))
     }
     res := person.result(st.pos, st.hist)
-    if res != 0 {
+    if res != 0 || st.drawn {
         out = vec.push(out, "")
-        out = vec.push(out, person.result_line(res))
+        if st.drawn && res == 0 {
+            out = vec.push(out, "1/2-1/2 draw agreed")
+        } else {
+            out = vec.push(out, person.result_line(res))
+        }
         out = vec.push(out, "played " + str(len(st.played)) + " plies")
     } else {
         out = vec.push(out, "You play " + side_name(human_side))
@@ -264,12 +272,16 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int
             cap := board_view.captured(st.pos, mode)
             out = vec.push(out, cap[0])
             out = vec.push(out, cap[1])
+            out = vec.push(out, board_view.material_line(st.pos))
         }
-        mv := board_view.movelist(st.sans, len(st.played), 4)
+        mv := board_view.movelist_off(st.sans, len(st.played), 4, st.hist_scroll)
         i := 0
         while i < len(mv) {
             out = vec.push(out, mv[i])
             i = i + 1
+        }
+        if st.hist_scroll > 0 {
+            out = vec.push(out, "(history -" + str(st.hist_scroll) + ", PgDn fwd)")
         }
         if len(st.hint) > 0 {
             out = vec.push(out, "Coach: " + st.hint)
@@ -279,24 +291,25 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int
         }
     }
     out = vec.push(out, "")
-    out = vec.push(out, "arrows/hjkl move · enter select")
-    out = vec.push(out, "? coach hint · u undo · q resign · e eval")
-    out = vec.push(out, "f flip · z zen · s suspend · b blindfold")
+    out = vec.push(out, "arrows/hjkl move · enter select · tab piece")
+    out = vec.push(out, "? hint · H help · u undo · d draw · q resign")
+    out = vec.push(out, "e eval · f flip · z zen · s suspend · b blind")
+    out = vec.push(out, "p save PGN · PgUp/PgDn history")
     out
 }
 
 // Zen mode: board + clock only, every other panel hidden.
 
-func zen_panel(st: Frame) -> [str] {
+func zen_panel(st: Frame, mode: int) -> [str] {
     out := []
-    cl := clock_line(st)
+    cl := clock_text(st.wms, st.bms, st.inc, mode)
     if len(cl) > 0 {
         out = vec.push(out, cl)
     }
     if len(st.hint) > 0 {
         out = vec.push(out, st.hint)
     }
-    out = vec.push(out, "z zen off")
+    out = vec.push(out, "z zen off · H help")
     out
 }
 
@@ -381,9 +394,9 @@ pub func do_move(st: Frame, m: int) -> Frame {
 }
 
 // Clock deduct: the mover pays the elapsed think plus gains the
-// increment. No live ticking — the blocking key reader cannot redraw
-// mid-thought — so time settles when the move lands. Pub: the LAN
-// game reuses it so both clocks stay in sync.
+// increment. Human turns repaint live via 500ms poll ticks
+// (display-only); engine think still settles here when the move
+// lands. Pub: the LAN game reuses it so both clocks stay in sync.
 
 pub func tick_clock(st: Frame) -> Frame {
     if st.wms < 0 {
@@ -430,16 +443,28 @@ pub func fmt_ms(ms: int) -> str {
     str(m) + ":" + tail
 }
 
-pub func clock_line(st: Frame) -> str {
-    if st.wms < 0 {
+pub func clock_text(wms: int, bms: int, inc: int, mode: int) -> str {
+    if wms < 0 {
         ""
     } else {
-        line := "Clock: W " + fmt_ms(st.wms) + " · B " + fmt_ms(st.bms)
-        if st.inc > 0 {
-            line = line + " (+" + str(st.inc / 1000) + ")"
+        line := "Clock: W " + fmt_ms(wms) + " · B " + fmt_ms(bms)
+        if inc > 0 {
+            line = line + " (+" + str(inc / 1000) + ")"
         }
-        line
+        if wms < 20000 || bms < 20000 {
+            if mode == 0 {
+                line + " !LOW"
+            } else {
+                colors.red(line + " !")
+            }
+        } else {
+            line
+        }
     }
+}
+
+pub func clock_line(st: Frame) -> str {
+    clock_text(st.wms, st.bms, st.inc, 1)
 }
 
 // 0 none, 1 white flagged, 2 black flagged.
@@ -467,6 +492,94 @@ func flag_line(f: int) -> str {
             ""
         }
     }
+}
+
+// Live clock view: the side to move pays the elapsed think so far.
+// Display-only — tick_clock still settles the real debit on the move.
+// Pure math in live_left (tested); live_view copies the frame.
+
+pub func live_left(base: int, turn_ms: int, now: int) -> int {
+    if base < 0 {
+        return base
+    }
+    left := base - (now - turn_ms)
+    if left < 0 {
+        left = 0
+    }
+    left
+}
+
+func live_view(st: Frame) -> Frame {
+    if st.wms < 0 {
+        return st
+    }
+    now := time.now_ms()
+    shown := st
+    if st.pos.side == 1 {
+        shown.wms = live_left(st.wms, st.turn_ms, now)
+    } else {
+        shown.bms = live_left(st.bms, st.turn_ms, now)
+    }
+    shown
+}
+
+func live_flagged(st: Frame) -> int {
+    shown := live_view(st)
+    flagged(shown)
+}
+
+// Help overlay: every key in one screen, any key dismisses.
+
+func help_rows() -> [str] {
+    ["Chesz keys", "", "arrows / hjkl ... move cursor", "enter / space .... select, move", "tab .............. jump to next piece", "click ............ select, click target", "drag ............. press piece, release on target", "? ................ coach hint (best move)", "H ................ this help", "u ................ undo (takes back engine reply too)", "d ................ offer the engine a draw", "q ................ resign", "e ................ toggle eval bar", "f ................ flip board", "z ................ zen mode (board + clock only)", "s ................ suspend game to disk", "b ................ blindfold (hide pieces)", "p ................ save PGN snapshot now", "PgUp / PgDn ..... scroll move history", "esc .............. deselect piece", "", "any key closes"]
+}
+
+func show_help(st: Frame, eng: person.Engine, human_side: int, mode: int, style: int, src: str, theme: int) {
+    rows := board_view.render_ex(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode, style, theme, st.tpal, st.flipped, st.blind)
+    if st.show_bar {
+        rows = board_view.with_bar(rows, st.bar_pct, mode)
+    }
+    draw_frame(rows, help_rows())
+    ev := mouse.read()
+    ev = ev
+}
+
+// Draw offers: the engine accepts while the human stands no worse
+// than a pawn down (bar_cp is White-perspective centipawns).
+
+pub func draw_accepts(bar_cp: int, human_side: int) -> bool {
+    mine := bar_cp
+    if human_side == 0 - 1 {
+        mine = 0 - bar_cp
+    }
+    mine >= 0 - 80
+}
+
+func offer_draw(st: Frame, eng: person.Engine, human_side: int) -> Frame {
+    if pick.pick("Offer draw?", ["Offer draw", "Keep playing"]) != 0 {
+        return st
+    }
+    if draw_accepts(st.bar_cp, human_side) {
+        st.drawn = true
+        st.hint = eng.name + " accepts the draw"
+    } else {
+        st.hint = eng.name + " declines (" + board_view.fmt_cp(st.bar_cp) + ")"
+    }
+    st
+}
+
+// Tab jump: next own piece after the cursor, wrapping the board.
+
+pub func next_piece_sq(b: [int], side: int, from: int) -> int {
+    k := 1
+    while k <= 64 {
+        sq := (from + k) % 64
+        if b[sq] * side > 0 {
+            return sq
+        }
+        k = k + 1
+    }
+    from
 }
 
 func pick_promo(legal: [int], from: int, to: int) -> int {
@@ -540,10 +653,14 @@ func game_loop(st: Frame, eng: person.Engine, human_side: int, duo: bool, mode: 
         }
         fl := flagged(st)
         res := person.result(st.pos, st.hist)
-        if fl != 0 || res != 0 {
+        if fl != 0 || res != 0 || st.drawn {
             line := flag_line(fl)
             if fl == 0 {
-                line = person.result_line(res)
+                if st.drawn && res == 0 {
+                    line = "1/2-1/2 draw agreed"
+                } else {
+                    line = person.result_line(res)
+                }
             }
             st = draw(st, eng, hs, line, mode, style, src, theme)
             c := pick.pick(line, ["Review", "Rematch", "Done"])
@@ -944,84 +1061,174 @@ func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, styl
     done := false
     while !done {
         st = draw(st, eng, human_side, "", mode, style, src, theme)
-        ev := mouse.read()
-        if mouse.is_mouse(ev) {
-            if ev[1] == 0 {
-                sq := mouse.board_sq_ex(ev[2], ev[3], st.m_ox, st.m_oy, st.show_bar, st.flipped)
-                if sq >= 0 {
-                    st.cursor = sq
-                    st = press(st, human_side)
-                    if st.selected == 0 - 2 {
-                        st.selected = 0 - 1
-                        done = true
-                    }
-                }
+        ev := mouse.read_timeout(500)
+        if mouse.is_tick(ev) {
+            // 500ms with no input: repaint the running clock
+            // (display-only; tick_clock settles the debit on the
+            // move). A flagged human ends here; the loop top
+            // then closes the game with the flag result.
+            shown := live_view(st)
+            tmp := draw(shown, eng, human_side, "", mode, style, src, theme)
+            st.m_ox = tmp.m_ox
+            st.m_oy = tmp.m_oy
+            if live_flagged(st) != 0 {
+                // Settle the live clocks into the real ones so the
+                // loop top sees the flag and closes the game instead
+                // of spinning another 500ms turn.
+                st = live_view(st)
+                done = true
             }
         } else {
-            k := ev[0]
-            if k == tkeys.eof() || k == tkeys.ctrl_c() {
-                st.cursor = 0 - 1000
-                done = true
+            if mouse.is_mouse(ev) {
+                if ev[1] == 0 {
+                    sq := mouse.board_sq_ex(ev[2], ev[3], st.m_ox, st.m_oy, st.show_bar, st.flipped)
+                    if sq >= 0 {
+                        st.cursor = sq
+                        if st.pos.b[sq] * human_side > 0 {
+                            st.drag = sq
+                        } else {
+                            st.drag = 0 - 1
+                        }
+                        st = press(st, human_side)
+                        if st.selected == 0 - 2 {
+                            st.selected = 0 - 1
+                            st.drag = 0 - 1
+                            done = true
+                        }
+                    }
+                }
             } else {
-                if k == 113 {
-                    if pick.pick("Resign?", ["Resign", "Keep playing"]) == 0 {
-                        st.cursor = 0 - 1000
-                        done = true
+                if mouse.is_release(ev) {
+                    // Drag finish: press selected the piece, the
+                    // release square plays the move when legal.
+                    if ev[1] == 0 && st.drag >= 0 {
+                        sq := mouse.board_sq_ex(ev[2], ev[3], st.m_ox, st.m_oy, st.show_bar, st.flipped)
+                        from := st.drag
+                        st.drag = 0 - 1
+                        if sq >= 0 && sq != from {
+                            st.cursor = sq
+                            st = press(st, human_side)
+                            if st.selected == 0 - 2 {
+                                st.selected = 0 - 1
+                                done = true
+                            }
+                        }
                     }
                 } else {
-                    if k == tkeys.esc() {
-                        st.selected = 0 - 1
-                        st.targets = []
+                    k := ev[0]
+                    if k == tkeys.eof() || k == tkeys.ctrl_c() {
+                        st.cursor = 0 - 1000
+                        done = true
                     } else {
-                        if k == 104 || k == 106 || k == 107 || k == 108 || k == tkeys.up() || k == tkeys.down() || k == tkeys.left() || k == tkeys.right() {
-                            dx := key_dx(k)
-                            dy := key_dy(k)
-                            if st.flipped {
-                                dx = 0 - dx
-                                dy = 0 - dy
+                        if k == 113 {
+                            if pick.pick("Resign?", ["Resign", "Keep playing"]) == 0 {
+                                st.cursor = 0 - 1000
+                                done = true
                             }
-                            st.cursor = board_view.step_cursor(st.cursor, dx, dy)
                         } else {
-                            if k == tkeys.enter() || k == 32 {
-                                st = press(st, human_side)
-                                if st.selected == 0 - 2 {
-                                    st.selected = 0 - 1
-                                    done = true
-                                }
+                            if k == tkeys.esc() {
+                                st.selected = 0 - 1
+                                st.targets = []
                             } else {
-                                if k == 63 {
-                                    st.hint = hint_for(st)
+                                if k == 104 || k == 106 || k == 107 || k == 108 || k == tkeys.up() || k == tkeys.down() || k == tkeys.left() || k == tkeys.right() {
+                                    dx := key_dx(k)
+                                    dy := key_dy(k)
+                                    if st.flipped {
+                                        dx = 0 - dx
+                                        dy = 0 - dy
+                                    }
+                                    st.cursor = board_view.step_cursor(st.cursor, dx, dy)
                                 } else {
-                                    if k == 117 {
-                                        if duo {
-                                            st = undo_n(st, human_side, 1)
-                                        } else {
-                                            st = undo(st, human_side)
+                                    if k == tkeys.enter() || k == 32 {
+                                        st = press(st, human_side)
+                                        if st.selected == 0 - 2 {
+                                            st.selected = 0 - 1
+                                            done = true
                                         }
                                     } else {
-                                        if k == 101 {
-                                            st.show_bar = !st.show_bar
+                                        if k == 63 {
+                                            st.hint = hint_for(st)
                                         } else {
-                                            if k == 102 {
-                                                st.flipped = !st.flipped
-                                            } else {
-                                                if k == 122 {
-                                                    st.zen = !st.zen
+                                            if k == 117 {
+                                                if duo {
+                                                    st = undo_n(st, human_side, 1)
                                                 } else {
-                                                    if k == 115 {
-                                                        path := save_suspend(st)
-                                                        if len(path) > 0 {
-                                                            st.hint = "Suspended: " + path
-                                                        } else {
-                                                            st.hint = "Suspend failed"
-                                                        }
+                                                    st = undo(st, human_side)
+                                                }
+                                            } else {
+                                                if k == 101 {
+                                                    st.show_bar = !st.show_bar
+                                                } else {
+                                                    if k == 102 {
+                                                        st.flipped = !st.flipped
                                                     } else {
-                                                        if k == 98 {
-                                                            st.blind = !st.blind
-                                                            if st.blind {
-                                                                st.hint = "Blindfold on — pieces hidden"
+                                                        if k == 122 {
+                                                            st.zen = !st.zen
+                                                        } else {
+                                                            if k == 115 {
+                                                                path := save_suspend(st)
+                                                                if len(path) > 0 {
+                                                                    st.hint = "Suspended: " + path
+                                                                } else {
+                                                                    st.hint = "Suspend failed"
+                                                                }
                                                             } else {
-                                                                st.hint = ""
+                                                                if k == 98 {
+                                                                    st.blind = !st.blind
+                                                                    if st.blind {
+                                                                        st.hint = "Blindfold on — pieces hidden"
+                                                                    } else {
+                                                                        st.hint = ""
+                                                                    }
+                                                                } else {
+                                                                    if k == 72 {
+                                                                        show_help(st, eng, human_side, mode, style, src, theme)
+                                                                    } else {
+                                                                        if k == 100 {
+                                                                            st = offer_draw(st, eng, human_side)
+                                                                            if st.drawn {
+                                                                                done = true
+                                                                            }
+                                                                        } else {
+                                                                            if k == 112 {
+                                                                                wn := "Human"
+                                                                                bn := eng.name
+                                                                                if human_side == 0 - 1 {
+                                                                                    wn = eng.name
+                                                                                    bn = "Human"
+                                                                                }
+                                                                                if duo {
+                                                                                    wn = "Human"
+                                                                                    bn = "Human"
+                                                                                }
+                                                                                path := save_pgn(st, wn, bn)
+                                                                                if len(path) > 0 {
+                                                                                    st.hint = "Saved: " + path
+                                                                                } else {
+                                                                                    st.hint = "Save failed"
+                                                                                }
+                                                                            } else {
+                                                                                if k == tkeys.tab() {
+                                                                                    st.cursor = next_piece_sq(st.pos.b, human_side, st.cursor)
+                                                                                } else {
+                                                                                    if k == 1007 {
+                                                                                        st.hist_scroll = st.hist_scroll + 4
+                                                                                        if st.hist_scroll > len(st.sans) {
+                                                                                            st.hist_scroll = len(st.sans)
+                                                                                        }
+                                                                                    } else {
+                                                                                        if k == 1008 {
+                                                                                            st.hist_scroll = st.hist_scroll - 4
+                                                                                            if st.hist_scroll < 0 {
+                                                                                                st.hist_scroll = 0
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -1098,6 +1305,7 @@ func undo_n(st: Frame, human_side: int, n: int) -> Frame {
     st2.flipped = st.flipped
     st2.zen = st.zen
     st2.blind = st.blind
+    st2.hist_scroll = st.hist_scroll
     // Eval history runs parallel to played (+1 seed): drop the same tail
     // so the report never reads a removed position.
     st2.evals = slice_moves(st.evals, len(st.evals) - n)
@@ -1210,10 +1418,14 @@ pub func result_str(st: Frame) -> str {
             "1-0 White wins on time"
         } else {
             res := person.result(st.pos, st.hist)
-            if res == 0 {
-                "unfinished"
+            if st.drawn && res == 0 {
+                "1/2-1/2 draw agreed"
             } else {
-                person.result_line(res)
+                if res == 0 {
+                    "unfinished"
+                } else {
+                    person.result_line(res)
+                }
             }
         }
     }
@@ -1247,7 +1459,7 @@ pub func report(st: Frame) -> [str] {
 pub func note_result(st: Frame, eng: person.Engine, human_side: int) -> int {
     fl := flagged(st)
     res := person.result(st.pos, st.hist)
-    if fl == 0 && res == 0 {
+    if fl == 0 && res == 0 && !st.drawn {
         return 0
     }
     hwon := false
@@ -1322,8 +1534,19 @@ func show_report(st: Frame, white: str, black: str, opp: str, delta: int) {
 // Share bundle: one markdown file with PGN + report + eval graph for
 // sending to friends. Returns the path ("" when the disk says no).
 
+// Agreed draws have no result code (person.result is 0 while drawn
+// is set), so PGN needs its own mapping — otherwise they export "*".
+
+func pgn_result(st: Frame) -> str {
+    if st.drawn && flagged(st) == 0 && person.result(st.pos, st.hist) == 0 {
+        "1/2-1/2"
+    } else {
+        pgn.result_of(person.result(st.pos, st.hist), flagged(st))
+    }
+}
+
 pub func share_text(st: Frame, white: str, black: str) -> str {
-    res := pgn.result_of(person.result(st.pos, st.hist), flagged(st))
+    res := pgn_result(st)
     out := "# Chesz game " + white + " vs " + black + " " + res + "\n\n"
     out = out + "```pgn\n" + pgn.build(white, black, st.sans, res) + "```\n\n"
     lines := report(st)
@@ -1367,7 +1590,7 @@ func save_pgn(st: Frame, white: str, black: str) -> str {
         .ok(_) => 0
         .err(_) => 0 - 1
     }
-    res := pgn.result_of(person.result(st.pos, st.hist), flagged(st))
+    res := pgn_result(st)
     path := dir + "/game_" + str(time.now_ms()) + ".pgn"
     match fs.write(path, pgn.build(white, black, st.sans, res)) {
         .ok(_) => path
