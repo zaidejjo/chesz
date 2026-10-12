@@ -1,0 +1,127 @@
+// Blunder drills: mine games/*.pgn for your biggest eval drops and
+// quiz the position back as "find better". Mining is static evals
+// only (VM-fast across dozens of games); the reveal is one depth-2
+// search, same price as a coach hint.
+
+import std.vec
+
+import ai
+import board
+import eval
+import fen
+import moves
+import san
+
+pub struct Blunder {
+    fen: str,
+    played: str,
+    loss: int,
+}
+
+func mover_win(evals: [int], i: int) -> int {
+    // Mover-perspective win% before ply i (evals[i] is pre-move).
+    mover := 1
+    if i % 2 == 1 {
+        mover = 0 - 1
+    }
+    w := eval.win_pct(evals[i])
+    if mover == 1 {
+        w
+    } else {
+        100 - w
+    }
+}
+
+func mover_win_after(evals: [int], i: int) -> int {
+    mover := 1
+    if i % 2 == 1 {
+        mover = 0 - 1
+    }
+    w := eval.win_pct(evals[i + 1])
+    if mover == 1 {
+        w
+    } else {
+        100 - w
+    }
+}
+
+// True when the side to move mates in one (no search — checking
+// replies only, like the threat radar).
+
+func hung_mate(p: board.Pos) -> bool {
+    ms := moves.gen_legal(p)
+    i := 0
+    while i < len(ms) {
+        r := moves.make(p, ms[i])
+        if moves.in_check(r) && len(moves.gen_legal(r)) == 0 {
+            return true
+        }
+        i = i + 1
+    }
+    false
+}
+
+// Every ply whose mover dropped >= min_loss win points, worst first
+// order left to top_n. Static eval is blind to tactics, so a move
+// that hangs mate-in-1 books loss 90 on the spot. Illegal tokens
+// stop the game (foreign PGNs).
+
+pub func find_blunders(sans: [str], min_loss: int) -> [Blunder] {
+    out := []
+    p := board.setup()
+    evals := [eval.white_cp(p)]
+    i := 0
+    while i < len(sans) {
+        m := san.parse_san(p, sans[i])
+        if m == 0 {
+            i = len(sans)
+        } else {
+            f := fen.generate(p)
+            played := sans[i]
+            q := moves.make(p, m)
+            evals = vec.push(evals, eval.white_cp(q))
+            loss := mover_win(evals, i) - mover_win_after(evals, i)
+            if loss < 90 && hung_mate(q) {
+                loss = 90
+            }
+            if loss >= min_loss {
+                out = vec.push(out, Blunder{fen: f, played: played, loss: loss})
+            }
+            p = q
+            i = i + 1
+        }
+    }
+    out
+}
+
+// Top n by loss desc (insertion sort — drill tables are tiny).
+
+pub func top_n(all: [Blunder], n: int) -> [Blunder] {
+    j := 1
+    while j < len(all) {
+        key := all[j]
+        k := j - 1
+        while k >= 0 && all[k].loss < key.loss {
+            all[k + 1] = all[k]
+            k = k - 1
+        }
+        all[k + 1] = key
+        j = j + 1
+    }
+    out := []
+    i := 0
+    while i < n && i < len(all) {
+        out = vec.push(out, all[i])
+        i = i + 1
+    }
+    out
+}
+
+// Best reply in a blunder position: depth-1 search, which already
+// sees mates (statics would take Qxe5+ over Qxf7#). One call per
+// failed drill — same price as a coach hint. Depth 2 stays out:
+// it blows up in the VM for no extra mate-finding.
+
+pub func best_reply(p: board.Pos) -> int {
+    ai.best_move(p, 1, [])
+}

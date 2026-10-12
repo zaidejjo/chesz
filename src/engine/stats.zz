@@ -197,6 +197,10 @@ pub func profile() -> str {
     profile_in(read_text())
 }
 
+pub func dump() -> str {
+    read_text()
+}
+
 func write_full(lad: int, changed: str, rec: [int], streak_n: int, skind: str) {
     text := read_text()
     names := opps()

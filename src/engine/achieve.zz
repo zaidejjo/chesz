@@ -1,0 +1,337 @@
+// Achievements: first blood, streaks, giant-slaying, speed mates,
+// marathons, comebacks, flawless games, the full set. Rules are pure
+// over (stats text, unlocked CSV, game facts); unlocked ids persist
+// in their own achieve.json (CSV string — zero stats ripple).
+// game.finish checks after note_result and prints new unlocks.
+
+import std.env
+import std.fs
+import std.json
+import std.str
+import std.vec
+
+import chesz.engine.eval
+import chesz.engine.stats
+
+pub func count() -> int {
+    8
+}
+
+pub func id_at(i: int) -> str {
+    if i == 1 {
+        "streak3"
+    } else {
+        if i == 2 {
+            "giant_slayer"
+        } else {
+            if i == 3 {
+                "speedster"
+            } else {
+                if i == 4 {
+                    "marathon"
+                } else {
+                    if i == 5 {
+                        "comeback"
+                    } else {
+                        if i == 6 {
+                            "flawless"
+                        } else {
+                            if i == 7 {
+                                "collector"
+                            } else {
+                                "first_blood"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub func name_of(id: str) -> str {
+    if id == "streak3" {
+        "On fire"
+    } else {
+        if id == "giant_slayer" {
+            "Giant slayer"
+        } else {
+            if id == "speedster" {
+                "Speedster"
+            } else {
+                if id == "marathon" {
+                    "Marathoner"
+                } else {
+                    if id == "comeback" {
+                        "Comeback kid"
+                    } else {
+                        if id == "flawless" {
+                            "Flawless"
+                        } else {
+                            if id == "collector" {
+                                "Collector"
+                            } else {
+                                "First blood"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub func desc_of(id: str) -> str {
+    if id == "streak3" {
+        "win 3 in a row"
+    } else {
+        if id == "giant_slayer" {
+            "beat Master"
+        } else {
+            if id == "speedster" {
+                "mate in 20 plies or less"
+            } else {
+                if id == "marathon" {
+                    "finish an 80+ ply game"
+                } else {
+                    if id == "comeback" {
+                        "win from 25% or worse"
+                    } else {
+                        if id == "flawless" {
+                            "95%+ accuracy over 10+ moves"
+                        } else {
+                            if id == "collector" {
+                                "beat every personality"
+                            } else {
+                                "win your first game"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+func ach_path() -> str {
+    match env.home_dir() {
+        .some(h) => h + "/.config/chesz/achieve.json"
+        .none => "./chesz_achieve.json"
+    }
+}
+
+func esc_json(t: str) -> str {
+    s := str.replace(t, "\\", "\\\\")
+    str.replace(s, "\"", "\\\"")
+}
+
+pub func has_id(csv: str, id: str) -> bool {
+    if csv == "" {
+        return false
+    }
+    parts := str.split(csv, ",")
+    i := 0
+    while i < len(parts) {
+        if parts[i] == id {
+            return true
+        }
+        i = i + 1
+    }
+    false
+}
+
+pub func add_id(csv: str, id: str) -> str {
+    if has_id(csv, id) {
+        csv
+    } else {
+        if csv == "" {
+            id
+        } else {
+            csv + "," + id
+        }
+    }
+}
+
+func unlocked_in(text: str) -> str {
+    j := json.parse_or_null(text)
+    if !json.is_object(j) {
+        return ""
+    }
+    match json.get(j, "unlocked") {
+        .ok(v) => {
+            if json.is_string(v) {
+                json.as_str(v)
+            } else {
+                ""
+            }
+        }
+        .err(_) => ""
+    }
+}
+
+pub func unlocked_csv(text: str) -> str {
+    unlocked_in(text)
+}
+
+pub func load_csv() -> str {
+    match fs.read_to_string(ach_path()) {
+        .ok(t) => unlocked_in(t)
+        .err(_) => ""
+    }
+}
+
+pub func unlock(id: str) {
+    csv := add_id(load_csv(), id)
+    home := ""
+    match env.home_dir() {
+        .some(h) => home = h + "/.config/chesz"
+        .none => home = "."
+    }
+    match fs.mkdir_all(home) {
+        .ok(_) => 0
+        .err(_) => 0 - 1
+    }
+    match fs.write(ach_path(), "{\"unlocked\": \"" + esc_json(csv) + "\"}\n") {
+        .ok(_) => 0
+        .err(_) => 0 - 1
+    }
+}
+
+// Mover-perspective accuracy mirror of the report math (engine-side
+// copy so tui.game stays out of the import graph).
+
+func accuracy(evals: [int], side: int) -> int {
+    tot := 0
+    n := 0
+    i := 0
+    while i + 1 < len(evals) {
+        mover := 1
+        if i % 2 == 1 {
+            mover = 0 - 1
+        }
+        if mover == side {
+            b := eval.win_pct(evals[i])
+            a := eval.win_pct(evals[i + 1])
+            mb := b
+            ma := a
+            if mover == 0 - 1 {
+                mb = 100 - b
+                ma = 100 - a
+            }
+            loss := mb - ma
+            if loss < 0 {
+                loss = 0
+            }
+            if loss > 100 {
+                loss = 100
+            }
+            sc := 100 - loss * 3
+            if sc < 0 {
+                sc = 0
+            }
+            tot = tot + sc
+            n = n + 1
+        }
+        i = i + 1
+    }
+    if n == 0 {
+        100
+    } else {
+        tot / n
+    }
+}
+
+func move_count(evals: [int], side: int) -> int {
+    n := 0
+    i := 0
+    while i + 1 < len(evals) {
+        mover := 1
+        if i % 2 == 1 {
+            mover = 0 - 1
+        }
+        if mover == side {
+            n = n + 1
+        }
+        i = i + 1
+    }
+    n
+}
+
+func worst_pct(evals: [int], side: int) -> int {
+    worst := 100
+    i := 0
+    while i < len(evals) {
+        w := eval.win_pct(evals[i])
+        mine := w
+        if side == 0 - 1 {
+            mine = 100 - w
+        }
+        if mine < worst {
+            worst = mine
+        }
+        i = i + 1
+    }
+    worst
+}
+
+func all_beaten(stats_text: str) -> bool {
+    names := stats.opps()
+    i := 0
+    while i < len(names) {
+        r := stats.rec_in(stats_text, names[i])
+        if r[1] <= 0 {
+            return false
+        }
+        i = i + 1
+    }
+    true
+}
+
+// Newly-earned ids (already-unlocked excluded). Call after record():
+// totals include this game, so first_blood lands exactly once.
+
+pub func check(stats_text: str, csv: str, won: bool, mated: bool, opp: str, plies: int, evals: [int], side: int) -> [str] {
+    out := []
+    t := stats.totals_in(stats_text)
+    if won && t[1] == 1 && !has_id(csv, "first_blood") {
+        out = vec.push(out, "first_blood")
+    }
+    st := stats.streak_in(stats_text)
+    if won && st[0] >= 3 && st[1] == 1 && !has_id(csv, "streak3") {
+        out = vec.push(out, "streak3")
+    }
+    if won && opp == "Master" && !has_id(csv, "giant_slayer") {
+        out = vec.push(out, "giant_slayer")
+    }
+    if won && mated && plies <= 20 && plies > 0 && !has_id(csv, "speedster") {
+        out = vec.push(out, "speedster")
+    }
+    if plies >= 80 && !has_id(csv, "marathon") {
+        out = vec.push(out, "marathon")
+    }
+    if won && worst_pct(evals, side) <= 25 && len(evals) > 2 && !has_id(csv, "comeback") {
+        out = vec.push(out, "comeback")
+    }
+    if won && move_count(evals, side) >= 10 && accuracy(evals, side) >= 95 && !has_id(csv, "flawless") {
+        out = vec.push(out, "flawless")
+    }
+    if won && all_beaten(stats_text) && !has_id(csv, "collector") {
+        out = vec.push(out, "collector")
+    }
+    out
+}
+
+pub func trophy_lines(csv: str) -> [str] {
+    out := []
+    i := 0
+    while i < count() {
+        id := id_at(i)
+        mark := "·"
+        if has_id(csv, id) {
+            mark = "x"
+        }
+        out = vec.push(out, "[" + mark + "] " + name_of(id) + " — " + desc_of(id))
+        i = i + 1
+    }
+    out
+}

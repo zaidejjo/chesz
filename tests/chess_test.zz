@@ -5,9 +5,11 @@ import std.net
 import std.str
 import std.vec
 
+import chesz.engine.achieve
 import chesz.engine.ai
 import chesz.engine.board
 import chesz.engine.book
+import chesz.engine.drills
 import chesz.engine.eval
 import chesz.engine.explore
 import chesz.engine.fen
@@ -1229,4 +1231,68 @@ func share_bundle_text() {
     assert_eq(str.contains(text, "[White \"Human\"]"), true)
     assert_eq(str.contains(text, "Chesz report"), true)
     assert_eq(str.contains(text, "Graph"), true)
+}
+
+@test
+func clock_odds_math() {
+    c := lobby.clock_odds(1, 10, 2, 5)
+    assert_eq(c[0], 600000)
+    assert_eq(c[1], 120000)
+    assert_eq(c[2], 5000)
+    c = lobby.clock_odds(0 - 1, 10, 2, 0)
+    assert_eq(c[0], 120000)
+    assert_eq(c[1], 600000)
+    assert_eq(c[2], 0)
+}
+
+@test
+func achievements_rule() {
+    assert_eq(achieve.count(), 8)
+    assert_eq(achieve.has_id("", "first_blood"), false)
+    assert_eq(achieve.has_id("first_blood,streak3", "streak3"), true)
+    assert_eq(achieve.add_id("first_blood", "first_blood"), "first_blood")
+    assert_eq(achieve.add_id("", "streak3"), "streak3")
+    // Fresh stats, first win vs Club in 30 plies: first blood only.
+    text := stats.build_text(800, [[0, 0, 0, 0], [0, 0, 0, 0], [1, 1, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]])
+    got := achieve.check(text, "", true, false, "Club", 30, [0, 0, 0], 1)
+    assert_eq(len(got), 1)
+    assert_eq(got[0], "first_blood")
+    // Already owned: nothing new.
+    got = achieve.check(text, "first_blood", true, false, "Club", 30, [0, 0, 0], 1)
+    assert_eq(len(got), 0)
+    // Speedster: mate in 14 plies. Marathon: 90 plies unfinished business counts.
+    got = achieve.check(text, "first_blood", true, true, "Club", 14, [0, 0, 0], 1)
+    assert_eq(len(got), 1)
+    assert_eq(got[0], "speedster")
+    got = achieve.check(text, "", false, false, "Club", 90, [0, 0, 0], 1)
+    assert_eq(len(got), 1)
+    assert_eq(got[0], "marathon")
+    // Giant slayer names Master (first blood already owned here).
+    got = achieve.check(text, "first_blood", true, false, "Master", 40, [0, 0, 0], 1)
+    assert_eq(len(got), 1)
+    assert_eq(got[0], "giant_slayer")
+    assert_eq(len(achieve.trophy_lines("")), 8)
+}
+
+@test
+func blunder_miner() {
+    // 3...Nf6 hangs mate: a big Black drop the miner must catch.
+    seq := ["e4", "e5", "Bc4", "Nc6", "Qh5", "Nf6", "Qxf7#"]
+    found := drills.find_blunders(seq, 20)
+    assert_eq(len(found) > 0, true)
+    assert_eq(found[0].played, "Nf6")
+    assert_eq(found[0].loss > 30, true)
+    assert_eq(len(drills.find_blunders([], 20)) == 0, true)
+    assert_eq(len(drills.find_blunders(["e4", "e5"], 20)) == 0, true)
+    top := drills.top_n(found, 1)
+    assert_eq(len(top), 1)
+    assert_eq(top[0].played, "Nf6")
+    // Best reply mates (search, not static — statics take Qxe5+).
+    match fen.parse("r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 0 1") {
+        .some(p) => {
+            m := drills.best_reply(p)
+            assert_eq(str.ends_with(san.notation(p, m), "#"), true)
+        }
+        .none => panic("mate FEN rejected")
+    }
 }

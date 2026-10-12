@@ -24,6 +24,7 @@ import chesz.engine.person
 import chesz.engine.pgn
 import chesz.engine.san
 import chesz.engine.tourney
+import chesz.tui.drill
 import chesz.tui.game
 import chesz.tui.lesson
 import chesz.tui.lobby
@@ -559,7 +560,7 @@ func show_help() {
     println("")
     println("usage: chesz [command]")
     println("")
-    println("  (no args)          lobby: play, hotseat, load PGN, puzzles, lessons, watch")
+    println("  (no args)          lobby: play, hotseat, load PGN, puzzles, lessons, drills, watch")
     println("  play               human (white) vs Club in plain text")
     println("  tui [white|black]  board UI vs Club (falls back to text)")
     println("  host [port]        host a LAN game (guest joins you)")
@@ -569,6 +570,7 @@ func show_help() {
     println("  tournament         round-robin over every personality + crosstable")
     println("  explore            win rates per opening mined from games/")
     println("  lessons            guided Scholar's mate + back-rank lessons")
+    println("  drills             your worst blunders, quizzed back")
     println("  analyze [FEN]      Expert top-3 over a position + PV line")
     println("  fen FEN            inspect a position (moves, checks, draws)")
     println("  pgn FILE           replay a PGN file, print the game")
@@ -653,6 +655,12 @@ func main(args: [str]) {
         }
         return
     }
+    if args[0] == "drills" {
+        if !drill.run() {
+            println("drills need a terminal")
+        }
+        return
+    }
     if args[0] == "host" {
         host_cmd(args)
         return
@@ -701,5 +709,5 @@ func main(args: [str]) {
         show_help()
         return
     }
-    println("usage: chesz [--help] | perft | ai | play | tui [white|black] | host [port] | join <host:port> | gauntlet | tournament | explore | lessons | uci | analyze [FEN] | fen FEN | pgn FILE")
+    println("usage: chesz [--help] | perft | ai | play | tui [white|black] | host [port] | join <host:port> | gauntlet | tournament | explore | lessons | drills | uci | analyze [FEN] | fen FEN | pgn FILE")
 }

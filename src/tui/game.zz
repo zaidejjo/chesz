@@ -11,6 +11,7 @@ import std.str
 import std.time
 import std.vec
 
+import chesz.engine.achieve
 import chesz.engine.ai
 import chesz.engine.board
 import chesz.engine.book
@@ -679,9 +680,49 @@ func finish(st: Frame, eng: person.Engine, human_side: int, duo: bool, white: st
     if !duo {
         delta = note_result(st, eng, human_side)
         opp = eng.name
+        award_trophies(st, eng, human_side)
     }
     show_report(st, white, black, opp, delta)
     st.after
+}
+
+// Achievements: derive win/mate from the result + clocks, check the
+// fresh stats (note_result already recorded), unlock + announce.
+
+func award_trophies(st: Frame, eng: person.Engine, human_side: int) {
+    fl := flagged(st)
+    res := person.result(st.pos, st.hist)
+    if fl == 0 && res == 0 {
+        return
+    }
+    won := false
+    mated := false
+    if fl == 1 {
+        won = human_side == 0 - 1
+    } else {
+        if fl == 2 {
+            won = human_side == 1
+        } else {
+            if res == 1 {
+                won = human_side == 1
+                mated = true
+            } else {
+                if res == 2 {
+                    won = human_side == 0 - 1
+                    mated = true
+                }
+            }
+        }
+    }
+    csv := achieve.load_csv()
+    // Stats re-read so totals include this game.
+    fresh := achieve.check(stats.dump(), csv, won, mated, eng.name, len(st.played), st.evals, human_side)
+    i := 0
+    while i < len(fresh) {
+        achieve.unlock(fresh[i])
+        println("Achievement unlocked: " + achieve.name_of(fresh[i]) + "!")
+        i = i + 1
+    }
 }
 
 pub func run(eng: person.Engine, human_side: int, clock: [int]) -> bool {

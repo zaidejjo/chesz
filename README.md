@@ -27,6 +27,8 @@ Launch `chesz` and the lobby offers everything:
 | Load PGN game  | Browse `.pgn` files, continue playing   |
 | Puzzles        | Mate-in-1 pack, three tries each        |
 | Lessons        | Scholar's mate + back-rank, move-by-move |
+| Blunder drills | Your worst drops, quizzed back (top 8) |
+| Trophies       | 8 achievements (streaks, Master scalp, …) |
 | Board theme    | 15 built-ins + your own files            |
 | Tournament     | Round-robin vs all personalities + crosstable |
 | Resume game    | Continue the suspended game (S mid-game) |
@@ -35,7 +37,8 @@ Launch `chesz` and the lobby offers everything:
 | Watch          | Engine vs engine, any pairing           |
 
 Before a game you pick a clock — Casual, Blitz 5+0, Rapid 15+10,
-or Custom (typed minutes + increment). The lobby header shows your
+Custom (typed minutes + increment), or Odds (uneven minutes per
+side, e.g. you 10 vs engine 2). The lobby header shows your
 profile card (ladder, record, streak). After it you get a report:
 result, accuracy per side, worst moves, final eval, your record, and
 your ladder rating, plus a share bundle (`games/share_<ms>.md` with
@@ -93,6 +96,7 @@ chesz gauntlet         Novice vs Club x4, Elo table
 chesz tournament       round-robin over every personality + crosstable
 chesz explore          win rates per opening mined from games/
 chesz lessons          guided Scholar's mate + back-rank lessons
+chesz drills           your worst blunders, quizzed back
 chesz analyze [FEN]    Expert top-3 over a position + PV line
 chesz fen FEN          inspect moves, checks, draws
 chesz pgn FILE         replay a PGN file

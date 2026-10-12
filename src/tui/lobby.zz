@@ -9,6 +9,7 @@ import std.term
 import std.vec
 
 import ask
+import chesz.engine.achieve
 import chesz.engine.board
 import chesz.engine.moves
 import chesz.engine.netproto
@@ -20,6 +21,7 @@ import chesz.engine.suspend
 import chesz.engine.tourney
 import chesz.tui.board_view
 import chesz.tui.browse
+import chesz.tui.drill
 import chesz.tui.game
 import chesz.tui.lesson
 import chesz.tui.mouse
@@ -101,6 +103,19 @@ pub func clock_of(mins: int, inc_secs: int) -> [int] {
     [mins * 60000, mins * 60000, inc_secs * 1000]
 }
 
+// Clock odds: uneven minutes per side (e.g. human 10 vs engine 2).
+// Maps to [white, black, inc] by your color. Pure, tested.
+
+pub func clock_odds(my_side: int, my_mins: int, op_mins: int, inc_s: int) -> [int] {
+    mine := my_mins * 60000
+    theirs := op_mins * 60000
+    if my_side == 1 {
+        [mine, theirs, inc_s * 1000]
+    } else {
+        [theirs, mine, inc_s * 1000]
+    }
+}
+
 func custom_clock() -> [int] {
     mins_opts := ["1 min", "3 min", "5 min", "10 min", "15 min", "30 min", "60 min"]
     mins_val := [1, 3, 5, 10, 15, 30, 60]
@@ -118,8 +133,32 @@ func custom_clock() -> [int] {
 }
 
 func clock_palette() -> [int] {
+    clock_palette_side(1)
+}
+
+func odds_clock(my_side: int) -> [int] {
+    min_opts := ["1 min", "2 min", "3 min", "5 min", "10 min", "15 min", "30 min", "60 min"]
+    min_val := [1, 2, 3, 5, 10, 15, 30, 60]
+    m := pick.pick("Your minutes", min_opts)
+    if m < 0 || m >= len(min_val) {
+        return [0 - 1, 0 - 1, 0]
+    }
+    o := pick.pick("Opponent minutes", min_opts)
+    if o < 0 || o >= len(min_val) {
+        return [0 - 1, 0 - 1, 0]
+    }
+    inc_opts := ["+0s", "+1s", "+2s", "+3s", "+5s", "+10s", "+30s"]
+    inc_val := [0, 1, 2, 3, 5, 10, 30]
+    s := pick.pick("Increment", inc_opts)
+    if s < 0 || s >= len(inc_val) {
+        return [0 - 1, 0 - 1, 0]
+    }
+    clock_odds(my_side, min_val[m], min_val[o], inc_val[s])
+}
+
+func clock_palette_side(my_side: int) -> [int] {
     // [white ms, black ms, increment ms]; -1 runs casual (no clock).
-    c := pick.pick("Clock", ["Casual (no clock)", "Blitz 5+0", "Rapid 15+10", "Custom…"])
+    c := pick.pick("Clock", ["Casual (no clock)", "Blitz 5+0", "Rapid 15+10", "Custom…", "Odds (uneven)…"])
     if c == 1 {
         [300000, 300000, 0]
     } else {
@@ -129,7 +168,11 @@ func clock_palette() -> [int] {
             if c == 3 {
                 custom_clock()
             } else {
-                [0 - 1, 0 - 1, 0]
+                if c == 4 {
+                    odds_clock(my_side)
+                } else {
+                    [0 - 1, 0 - 1, 0]
+                }
             }
         }
     }
@@ -356,6 +399,12 @@ func online_flow() {
     }
 }
 
+func trophies_flow() {
+    lines := achieve.trophy_lines(achieve.load_csv())
+    msg := str.join(lines, "\n")
+    pick.pick(msg, ["OK"])
+}
+
 func theme_palette() {
     names := board_view.all_theme_names()
     if len(names) == 0 {
@@ -428,13 +477,13 @@ pub func run() -> bool {
         raw_on()
         mouse.enable()
         title := "Chesz · " + stats.profile()
-        c := pick.pick(title, ["Play vs engine", "Two humans (hotseat)", "Load PGN game", "Puzzles", "Lessons", "Board theme", "Watch engine vs engine", "Tournament", "Resume game", "Play online (LAN)", "Quit"])
+        c := pick.pick(title, ["Play vs engine", "Two humans (hotseat)", "Load PGN game", "Puzzles", "Lessons", "Blunder drills", "Board theme", "Watch engine vs engine", "Tournament", "Resume game", "Play online (LAN)", "Trophies", "Quit"])
         if c == 0 {
             side := color_palette()
             if side != 0 {
                 eng := play_engine_palette()
                 odds := handicap_palette()
-                clock := clock_palette()
+                clock := clock_palette_side(side)
                 played := false
                 if odds == 0 {
                     played = game.run(eng, side, clock)
@@ -473,30 +522,43 @@ pub func run() -> bool {
                             mouse.enable()
                         } else {
                             if c == 5 {
-                                theme_palette()
+                                drilled := drill.run()
+                                if !drilled {
+                                    again = false
+                                }
+                                mouse.enable()
                             } else {
                                 if c == 6 {
-                                    w := engine_palette()
-                                    b := engine_palette()
-                                    watched := watch.run(w, b)
-                                    if !watched {
-                                        again = false
-                                    }
-                                    mouse.enable()
+                                    theme_palette()
                                 } else {
                                     if c == 7 {
-                                        tournament_flow()
+                                        w := engine_palette()
+                                        b := engine_palette()
+                                        watched := watch.run(w, b)
+                                        if !watched {
+                                            again = false
+                                        }
                                         mouse.enable()
                                     } else {
                                         if c == 8 {
-                                            resume_flow()
+                                            tournament_flow()
                                             mouse.enable()
                                         } else {
                                             if c == 9 {
-                                                online_flow()
+                                                resume_flow()
                                                 mouse.enable()
                                             } else {
-                                                again = false
+                                                if c == 10 {
+                                                    online_flow()
+                                                    mouse.enable()
+                                                } else {
+                                                    if c == 11 {
+                                                        trophies_flow()
+                                                        mouse.enable()
+                                                    } else {
+                                                        again = false
+                                                    }
+                                                }
                                             }
                                         }
                                     }
