@@ -22,19 +22,24 @@ Launch `chesz` and the lobby offers everything:
 
 | Entry          | What                                    |
 |----------------|-----------------------------------------|
-| Play vs engine | You vs one of five personalities        |
+| Play vs engine | You vs one of five personalities (+handicap odds) |
 | Two humans     | Hotseat on one board                    |
 | Load PGN game  | Browse `.pgn` files, continue playing   |
 | Puzzles        | Mate-in-1 pack, three tries each        |
+| Lessons        | Scholar's mate + back-rank, move-by-move |
 | Board theme    | 15 built-ins + your own files            |
+| Tournament     | Round-robin vs all personalities + crosstable |
+| Resume game    | Continue the suspended game (S mid-game) |
 
 | Watch          | Engine vs engine, any pairing           |
 
-Before a game you pick a clock — Casual, Blitz 5+0, or Rapid 15+10.
-After it you get a report: result, accuracy per side, worst moves,
-final eval, your record, and your ladder rating. Step through the
-finished game first (Review), or go again instantly with flipped
-colors (Rematch).
+Before a game you pick a clock — Casual, Blitz 5+0, Rapid 15+10,
+or Custom (typed minutes + increment). The lobby header shows your
+profile card (ladder, record, streak). After it you get a report:
+result, accuracy per side, worst moves, final eval, your record, and
+your ladder rating, plus a share bundle (`games/share_<ms>.md` with
+PGN + report + graph). Step through the finished game first
+(Review), or go again instantly with flipped colors (Rematch).
 
 ## Board keys
 
@@ -47,6 +52,9 @@ colors (Rematch).
 | ?            | Coach hint                        |
 | u            | Take back (1 ply hotseat, 2 vs AI)|
 | e            | Eval bar on/off                   |
+| f            | Flip board (Black's view)         |
+| z            | Zen mode (board + clock only)     |
+| s            | Suspend game (resume tomorrow)    |
 | q            | Resign · quit                     |
 
 Everything else is in `chesz --help`.
@@ -78,7 +86,10 @@ chesz play             text game vs Club
 chesz tui [white|black] board game vs Club
 chesz ai               Club vs Club demo
 chesz gauntlet         Novice vs Club x4, Elo table
-chesz analyze [FEN]    Expert top-3 over a position
+chesz tournament       round-robin over every personality + crosstable
+chesz explore          win rates per opening mined from games/
+chesz lessons          guided Scholar's mate + back-rank lessons
+chesz analyze [FEN]    Expert top-3 over a position + PV line
 chesz fen FEN          inspect moves, checks, draws
 chesz pgn FILE         replay a PGN file
 chesz perft            movegen self-check

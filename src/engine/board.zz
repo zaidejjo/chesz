@@ -60,6 +60,56 @@ pub func setup() -> Pos {
     Pos{b: b, side: 1, cast: 15, ep: -1, half: 0, full: 1}
 }
 
+// Handicap odds: the ENGINE side starts minus one queenside piece
+// (knight/bishop/rook). Rook removal also clears that side's
+// queenside castling bit; the book naturally misses from here and
+// the ladder scores normally. pc: 2 knight, 3 bishop, 4 rook,
+// anything else returns the normal startpos.
+
+pub func setup_odds_side(pc: int, side: int) -> Pos {
+    p := setup()
+    if side == 1 {
+        if pc == 2 {
+            p.b[1] = 0
+        } else {
+            if pc == 3 {
+                p.b[2] = 0
+            } else {
+                if pc == 4 {
+                    p.b[0] = 0
+                    if (p.cast / 2) % 2 == 1 {
+                        p.cast = p.cast - 2
+                    }
+                } else {
+                    return p
+                }
+            }
+        }
+    } else {
+        if pc == 2 {
+            p.b[57] = 0
+        } else {
+            if pc == 3 {
+                p.b[58] = 0
+            } else {
+                if pc == 4 {
+                    p.b[56] = 0
+                    if (p.cast / 8) % 2 == 1 {
+                        p.cast = p.cast - 8
+                    }
+                } else {
+                    return p
+                }
+            }
+        }
+    }
+    p
+}
+
+pub func setup_odds(pc: int) -> Pos {
+    setup_odds_side(pc, 0 - 1)
+}
+
 pub func glyph(p: int) -> str {
     table := ["k", "q", "r", "b", "n", "p", ".", "P", "N", "B", "R", "Q", "K"]
     i := p + 6

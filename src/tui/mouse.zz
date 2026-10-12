@@ -153,6 +153,13 @@ pub func read() -> [int] {
 // only the origin moves).
 
 pub func board_sq(x: int, y: int, ox: int, oy: int, bar: bool) -> int {
+    board_sq_ex(x, y, ox, oy, bar, false)
+}
+
+// Flipped view is a 180-degree rotation: the same cell hit-test
+// resolves to the opposite square (63 - sq).
+
+pub func board_sq_ex(x: int, y: int, ox: int, oy: int, bar: bool, flipped: bool) -> int {
     vy := y - 1 - oy
     if vy < 1 || vy > 16 {
         return 0 - 1
@@ -166,5 +173,9 @@ pub func board_sq(x: int, y: int, ox: int, oy: int, bar: bool) -> int {
     if vx < 0 || vx >= 56 {
         return 0 - 1
     }
-    r * 8 + vx / 7
+    sq := r * 8 + vx / 7
+    if flipped {
+        sq = 63 - sq
+    }
+    sq
 }

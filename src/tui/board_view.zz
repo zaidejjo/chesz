@@ -173,6 +173,7 @@ func piece_fg(v: int, text: str, mode: int) -> str {
         }
     }
 }
+
 func rank_label(r: int, mode: int) -> str {
     t := str(r + 1) + " "
     if mode == 0 {
@@ -348,22 +349,93 @@ func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], 
 // block: pure math on visible widths (ANSI stripped), so highlights
 // never shift columns. ox/oy pad left/top.
 
+// Board flip: view from Black's side. flip_sq mirrors one square;
+// render_ex mirrors ranks, files and foot labels when flipped.
+
+pub func flip_sq(sq: int) -> int {
+    63 - sq
+}
+
 pub func render(p: board.Pos, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, mode: int, style: int, theme: int, pal: [int]) -> [str] {
+    render_ex(p, cursor, selected, targets, last_from, last_to, mode, style, theme, pal, false)
+}
+
+pub func render_ex(p: board.Pos, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, mode: int, style: int, theme: int, pal: [int], flipped: bool) -> [str] {
     check_king := 0 - 1
     if moves.in_check(p) {
         check_king = moves.king_sq(p.b, p.side)
     }
     rows := []
     rows = vec.push(rows, frame_top(mode))
-    r := 7
-    while r >= 0 {
-        rows = vec.push(rows, cell_row(p, r, cursor, selected, targets, last_from, last_to, check_king, mode, false, style, theme, pal))
-        rows = vec.push(rows, cell_row(p, r, cursor, selected, targets, last_from, last_to, check_king, mode, true, style, theme, pal))
-        r = r - 1
+    dr := 0
+    while dr < 8 {
+        lr := 7 - dr
+        if flipped {
+            lr = dr
+        }
+        rows = vec.push(rows, cell_row_ex(p, lr, cursor, selected, targets, last_from, last_to, check_king, mode, false, style, theme, pal, flipped))
+        rows = vec.push(rows, cell_row_ex(p, lr, cursor, selected, targets, last_from, last_to, check_king, mode, true, style, theme, pal, flipped))
+        dr = dr + 1
     }
     rows = vec.push(rows, frame_bottom(mode))
-    rows = vec.push(rows, foot_row(mode))
+    rows = vec.push(rows, foot_row_ex(mode, flipped))
     rows
+}
+
+func cell_row_ex(p: board.Pos, lr: int, cursor: int, selected: int, targets: [int], last_from: int, last_to: int, check_king: int, mode: int, piece_line: bool, style: int, theme: int, pal: [int], flipped: bool) -> str {
+    head := "  │"
+    if piece_line {
+        head = rank_label(lr, mode) + vbar(mode)
+    } else {
+        if mode != 0 {
+            head = "  " + colors.dim("│")
+        }
+    }
+    line := head
+    df := 0
+    while df < 8 {
+        lf := df
+        if flipped {
+            lf = 7 - df
+        }
+        sq := lr * 8 + lf
+        v := p.b[sq]
+        cell := "       "
+        if true {
+            if mode == 0 || style == 2 {
+                if piece_line {
+                    g := " "
+                    if v != 0 {
+                        g = board.glyph(v)
+                    }
+                    if mode == 0 {
+                        cell = "   " + g + "   "
+                    } else {
+                        cell = "  " + piece_mid(v, g, mode) + "  "
+                    }
+                }
+            } else {
+                if style == 1 {
+                    if piece_line {
+                        cell = "  " + piece_mid(v, glyph_for(v, mode), mode) + "  "
+                    }
+                } else {
+                    sub := 0
+                    if piece_line {
+                        sub = 1
+                    }
+                    cell = piece_fg(v, ascii_art(v, sub), mode)
+                }
+            }
+        }
+        line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, mode, theme, pal)
+        df = df + 1
+    }
+    if mode == 0 {
+        line + "|"
+    } else {
+        line + vbar(mode)
+    }
 }
 
 // 7-wide cells, 2 tall: pixel art pairs per cell row.
@@ -918,7 +990,14 @@ func ascii_bot(a: int) -> str {
 }
 
 func foot_row(mode: int) -> str {
+    foot_row_ex(mode, false)
+}
+
+pub func foot_row_ex(mode: int, flipped: bool) -> str {
     foot := "      a      b      c      d      e      f      g      h"
+    if flipped {
+        foot = "      h      g      f      e      d      c      b      a"
+    }
     if mode == 0 {
         foot
     } else {

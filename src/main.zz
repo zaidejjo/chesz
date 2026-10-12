@@ -6,19 +6,25 @@
 //   d_zz run examples/chess/main.zz ai       AI vs AI, depth 2
 //   d_zz run examples/chess/main.zz play     human (white) vs AI, moves like e2e4
 
+import std.env
 import std.fs
+import std.str
 import std.time
+import std.vec
 
 import ask
 import chesz.engine.ai
 import chesz.engine.board
 import chesz.engine.book
+import chesz.engine.explore as explore_mod
 import chesz.engine.fen
 import chesz.engine.moves
 import chesz.engine.person
 import chesz.engine.pgn
 import chesz.engine.san
+import chesz.engine.tourney
 import chesz.tui.game
+import chesz.tui.lesson
 import chesz.tui.lobby
 import chesz.uci.uci
 
@@ -362,8 +368,123 @@ func analyze(fen_text: str) {
                 println(str(i + 1) + ". " + san.notation(p, r.moves[i]) + " " + uci.score_line(r.scores[i]) + " (depth " + str(r.depth) + ")")
                 i = i + 1
             }
+            pv := ai.pv(p, 2, 4)
+            if len(pv) > 0 {
+                line := "PV:"
+                q := p
+                k := 0
+                while k < len(pv) {
+                    line = line + " " + san.notation(q, pv[k])
+                    q = moves.make(q, pv[k])
+                    k = k + 1
+                }
+                println(line)
+            }
         }
         .none => println("bad FEN")
+    }
+}
+
+// Opening explorer: mine games/*.pgn, recognize the position at ply 6
+// via book.name_of, print a games/white% table.
+
+func explore() {
+    home := ""
+    match env.home_dir() {
+        .some(h) => home = h + "/.config/chesz/games"
+        .none => home = "./chesz_games"
+    }
+    match fs.read_dir(home) {
+        .ok(all) => {
+            openings := []
+            results := []
+            i := 0
+            while i < len(all) {
+                n := all[i]
+                if str.ends_with(n, ".pgn") || str.ends_with(n, ".PGN") {
+                    match fs.read_to_string(home + "/" + n) {
+                        .ok(text) => {
+                            openings = vec.push(openings, explore_mod.opening_at6(pgn.tokens(text)))
+                            results = vec.push(results, explore_mod.result_of_text(text))
+                        }
+                        .err(_) => {
+                            skip := 0
+                            skip = skip
+                        }
+                    }
+                }
+                i = i + 1
+            }
+            if len(openings) == 0 {
+                println("no games yet")
+                return
+            }
+            lines := explore_mod.summarize(openings, results)
+            i = 0
+            while i < len(lines) {
+                println(lines[i])
+                i = i + 1
+            }
+        }
+        .err(_) => println("no games yet")
+    }
+}
+
+// Tournament: round-robin over every personality, alternating colors,
+// crosstable at the end.
+
+func tournament() {
+    names := person.roster_names()
+    n := len(names)
+    mat := []
+    i := 0
+    while i < n * n {
+        mat = vec.push(mat, 0 - 1)
+        i = i + 1
+    }
+    a := 0
+    while a < n {
+        b := a + 1
+        while b < n {
+            println(tourney.short_of(names[a]) + " vs " + tourney.short_of(names[b]))
+            r1 := tourney.play_game(person.by_index(a), person.by_index(b), 40)
+            ends := ["1/2-1/2", "1-0", "0-1"]
+            println(ends[r1] + " (" + tourney.short_of(names[a]) + " white)")
+            r2 := tourney.play_game(person.by_index(b), person.by_index(a), 40)
+            println(ends[r2] + " (" + tourney.short_of(names[b]) + " white)")
+            if r1 == 1 {
+                mat[a * n + b] = 2
+                mat[b * n + a] = 0
+            } else {
+                if r1 == 2 {
+                    mat[a * n + b] = 0
+                    mat[b * n + a] = 2
+                } else {
+                    mat[a * n + b] = 1
+                    mat[b * n + a] = 1
+                }
+            }
+            if r2 == 1 {
+                mat[b * n + a] = 2
+                mat[a * n + b] = 0
+            } else {
+                if r2 == 2 {
+                    mat[b * n + a] = 0
+                    mat[a * n + b] = 2
+                } else {
+                    mat[b * n + a] = 1
+                    mat[a * n + b] = 1
+                }
+            }
+            b = b + 1
+        }
+        a = a + 1
+    }
+    lines := tourney.table(names, mat, n)
+    i := 0
+    while i < len(lines) {
+        println(lines[i])
+        i = i + 1
     }
 }
 
@@ -436,12 +557,15 @@ func show_help() {
     println("")
     println("usage: chesz [command]")
     println("")
-    println("  (no args)          lobby: play, hotseat, load PGN, puzzles, watch")
+    println("  (no args)          lobby: play, hotseat, load PGN, puzzles, lessons, watch")
     println("  play               human (white) vs Club in plain text")
     println("  tui [white|black]  board UI vs Club (falls back to text)")
     println("  ai                 Club vs Club demo, 40 plies")
     println("  gauntlet           Novice vs Club x4 with an Elo table")
-    println("  analyze [FEN]      Expert top-3 over a position")
+    println("  tournament         round-robin over every personality + crosstable")
+    println("  explore            win rates per opening mined from games/")
+    println("  lessons            guided Scholar's mate + back-rank lessons")
+    println("  analyze [FEN]      Expert top-3 over a position + PV line")
     println("  fen FEN            inspect a position (moves, checks, draws)")
     println("  pgn FILE           replay a PGN file, print the game")
     println("  perft              movegen self-check (20 / 400 / 8902)")
@@ -449,7 +573,7 @@ func show_help() {
     println("  --help, -h         this help")
     println("")
     println("board keys: arrows/hjkl move · enter select · ? hint · u undo")
-    println("            q resign · e eval bar")
+    println("            q resign · e eval bar · f flip · z zen · s suspend")
 }
 
 func main(args: [str]) {
@@ -473,6 +597,20 @@ func main(args: [str]) {
     }
     if args[0] == "gauntlet" {
         gauntlet()
+        return
+    }
+    if args[0] == "tournament" {
+        tournament()
+        return
+    }
+    if args[0] == "explore" {
+        explore()
+        return
+    }
+    if args[0] == "lessons" {
+        if !lesson.run() {
+            println("lessons need a terminal")
+        }
         return
     }
     if args[0] == "uci" {
@@ -509,5 +647,5 @@ func main(args: [str]) {
         show_help()
         return
     }
-    println("usage: chesz [--help] | perft | ai | play | tui [white|black] | gauntlet | uci | analyze [FEN] | fen FEN | pgn FILE")
+    println("usage: chesz [--help] | perft | ai | play | tui [white|black] | gauntlet | tournament | explore | lessons | uci | analyze [FEN] | fen FEN | pgn FILE")
 }

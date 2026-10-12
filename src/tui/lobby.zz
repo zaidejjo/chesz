@@ -14,9 +14,12 @@ import chesz.engine.person
 import chesz.engine.pgn
 import chesz.engine.san
 import chesz.engine.stats
+import chesz.engine.suspend
+import chesz.engine.tourney
 import chesz.tui.board_view
 import chesz.tui.browse
 import chesz.tui.game
+import chesz.tui.lesson
 import chesz.tui.mouse
 import chesz.tui.pick
 import chesz.tui.puzz
@@ -91,16 +94,60 @@ func color_palette() -> int {
     }
 }
 
+pub func clock_of(mins: int, inc_secs: int) -> [int] {
+    [mins * 60000, mins * 60000, inc_secs * 1000]
+}
+
+func custom_clock() -> [int] {
+    mins_opts := ["1 min", "3 min", "5 min", "10 min", "15 min", "30 min", "60 min"]
+    mins_val := [1, 3, 5, 10, 15, 30, 60]
+    m := pick.pick("Minutes per side", mins_opts)
+    if m < 0 || m >= len(mins_val) {
+        return [0 - 1, 0 - 1, 0]
+    }
+    inc_opts := ["+0s", "+1s", "+2s", "+3s", "+5s", "+10s", "+30s"]
+    inc_val := [0, 1, 2, 3, 5, 10, 30]
+    s := pick.pick("Increment", inc_opts)
+    if s < 0 || s >= len(inc_val) {
+        return [0 - 1, 0 - 1, 0]
+    }
+    clock_of(mins_val[m], inc_val[s])
+}
+
 func clock_palette() -> [int] {
     // [white ms, black ms, increment ms]; -1 runs casual (no clock).
-    c := pick.pick("Clock", ["Casual (no clock)", "Blitz 5+0", "Rapid 15+10"])
+    c := pick.pick("Clock", ["Casual (no clock)", "Blitz 5+0", "Rapid 15+10", "Custom…"])
     if c == 1 {
         [300000, 300000, 0]
     } else {
         if c == 2 {
             [900000, 900000, 10000]
         } else {
-            [0 - 1, 0 - 1, 0]
+            if c == 3 {
+                custom_clock()
+            } else {
+                [0 - 1, 0 - 1, 0]
+            }
+        }
+    }
+}
+
+// Handicap: the engine starts minus one queenside piece (rook odds
+// also drop its queenside castling). 0 plays even.
+
+func handicap_palette() -> int {
+    c := pick.pick("Handicap", ["Even game", "Knight odds", "Bishop odds", "Rook odds"])
+    if c == 1 {
+        2
+    } else {
+        if c == 2 {
+            3
+        } else {
+            if c == 3 {
+                4
+            } else {
+                0
+            }
         }
     }
 }
@@ -164,6 +211,91 @@ func load_pgn_flow() {
             return
         }
     }
+}
+
+// Suspended game: rebuild the live frame from the SAN trail with the
+// saved clocks, then pick a side/engine and continue. Repetition
+// history past the last-12 window does not survive (see suspend.zz).
+
+func resume_flow() {
+    if !suspend.has_save() {
+        pick.pick("No suspended game", ["OK"])
+        return
+    }
+    text := suspend.load_text()
+    if suspend.fen_in(text) == "" && len(suspend.sans_in(text)) == 0 {
+        pick.pick("No suspended game", ["OK"])
+        return
+    }
+    st := game.load_suspend()
+    if len(st.sans) == 0 {
+        pick.pick("Suspended game is empty", ["OK"])
+        return
+    }
+    side := color_palette()
+    if side == 0 {
+        return
+    }
+    eng := play_engine_palette()
+    clock := [st.wms, st.bms, st.inc]
+    if side == 1 {
+        game.run_loaded(st, eng, side, clock, "Human", eng.name)
+        return
+    }
+    game.run_loaded(st, eng, side, clock, eng.name, "Human")
+    return
+}
+
+// Tournament: round-robin over every personality, alternating colors,
+// crosstable at the end. Engine clocks make this native-fast;
+// the VM takes its time (Master thinks 3s a move).
+
+func tournament_flow() {
+    names := person.roster_names()
+    n := len(names)
+    mat := []
+    i := 0
+    while i < n * n {
+        mat = vec.push(mat, 0 - 1)
+        i = i + 1
+    }
+    a := 0
+    while a < n {
+        b := a + 1
+        while b < n {
+            r1 := tourney.play_game(person.by_index(a), person.by_index(b), 40)
+            if r1 == 1 {
+                mat[a * n + b] = 2
+                mat[b * n + a] = 0
+            } else {
+                if r1 == 2 {
+                    mat[a * n + b] = 0
+                    mat[b * n + a] = 2
+                } else {
+                    mat[a * n + b] = 1
+                    mat[b * n + a] = 1
+                }
+            }
+            r2 := tourney.play_game(person.by_index(b), person.by_index(a), 40)
+            if r2 == 1 {
+                mat[b * n + a] = 2
+                mat[a * n + b] = 0
+            } else {
+                if r2 == 2 {
+                    mat[b * n + a] = 0
+                    mat[a * n + b] = 2
+                } else {
+                    mat[b * n + a] = 1
+                    mat[a * n + b] = 1
+                }
+            }
+            b = b + 1
+        }
+        a = a + 1
+    }
+    lines := tourney.table(names, mat, n)
+    msg := str.join(lines, "\n")
+    pick.pick(msg, ["OK"])
 }
 
 func theme_palette() {
@@ -237,11 +369,20 @@ pub func run() -> bool {
     while again {
         raw_on()
         mouse.enable()
-        c := pick.pick("Chesz", ["Play vs engine", "Two humans (hotseat)", "Load PGN game", "Puzzles", "Board theme", "Watch engine vs engine", "Quit"])
+        title := "Chesz · " + stats.profile()
+        c := pick.pick(title, ["Play vs engine", "Two humans (hotseat)", "Load PGN game", "Puzzles", "Lessons", "Board theme", "Watch engine vs engine", "Tournament", "Resume game", "Quit"])
         if c == 0 {
             side := color_palette()
             if side != 0 {
-                played := game.run(play_engine_palette(), side, clock_palette())
+                eng := play_engine_palette()
+                odds := handicap_palette()
+                clock := clock_palette()
+                played := false
+                if odds == 0 {
+                    played = game.run(eng, side, clock)
+                } else {
+                    played = game.run_odds(eng, side, clock, odds)
+                }
                 if !played {
                     again = false
                 }
@@ -267,18 +408,36 @@ pub func run() -> bool {
                         mouse.enable()
                     } else {
                         if c == 4 {
-                            theme_palette()
+                            lessoned := lesson.run()
+                            if !lessoned {
+                                again = false
+                            }
+                            mouse.enable()
                         } else {
                             if c == 5 {
-                                w := engine_palette()
-                                b := engine_palette()
-                                watched := watch.run(w, b)
-                                if !watched {
-                                    again = false
-                                }
-                                mouse.enable()
+                                theme_palette()
                             } else {
-                                again = false
+                                if c == 6 {
+                                    w := engine_palette()
+                                    b := engine_palette()
+                                    watched := watch.run(w, b)
+                                    if !watched {
+                                        again = false
+                                    }
+                                    mouse.enable()
+                                } else {
+                                    if c == 7 {
+                                        tournament_flow()
+                                        mouse.enable()
+                                    } else {
+                                        if c == 8 {
+                                            resume_flow()
+                                            mouse.enable()
+                                        } else {
+                                            again = false
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

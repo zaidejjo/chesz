@@ -1,0 +1,72 @@
+// Guided lessons: Scholar's mate trap + back-rank theme, taught
+// move-by-move on the puzzle rails. Data stays pure and tested
+// (FENs parse, every SAN is legal in sequence); the TUI runner
+// lives in tui/lesson.zz.
+
+pub func count() -> int {
+    2
+}
+
+pub func fen_at(i: int) -> str {
+    if i == 1 {
+        "6k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1"
+    } else {
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    }
+}
+
+pub func desc_at(i: int) -> str {
+    if i == 1 {
+        "Back-rank theme"
+    } else {
+        "Scholar's mate trap"
+    }
+}
+
+pub func moves_at(i: int) -> [str] {
+    if i == 1 {
+        ["Re8#"]
+    } else {
+        ["e4", "e5", "Bc4", "Nc6", "Qh5", "Nf6", "Qxf7#"]
+    }
+}
+
+pub func teach_at(i: int, ply: int) -> str {
+    if i == 1 {
+        if ply == 0 {
+            "Rooks own the open back rank — Re8 is mate."
+        } else {
+            "Lesson complete."
+        }
+    } else {
+        if ply == 0 {
+            "1. e4: own the center first."
+        } else {
+            if ply == 1 {
+                "1... e5: Black answers in kind."
+            } else {
+                if ply == 2 {
+                    "2. Bc4: aim at f7, the weakest square."
+                } else {
+                    if ply == 3 {
+                        "2... Nc6: Black develops, misses the threat."
+                    } else {
+                        if ply == 4 {
+                            "3. Qh5: double attack on f7 with the bishop."
+                        } else {
+                            if ply == 5 {
+                                "3... Nf6?? attacks the queen — and hangs mate."
+                            } else {
+                                if ply == 6 {
+                                    "4. Qxf7#: queen takes, bishop covers escape."
+                                } else {
+                                    "Lesson complete."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -451,3 +451,26 @@ pub func best_score(p: board.Pos, depth: int) -> int {
     }
     best
 }
+
+// Principal variation: walk best replies `plies` deep at `depth`.
+// No person import (that would cycle) — terminal when no legal move.
+// Analyze formats the SAN line; mate-in-1 PVs open with the mate.
+
+pub func pv(p: board.Pos, depth: int, plies: int) -> [int] {
+    out := []
+    cur := p
+    hist := []
+    i := 0
+    while i < plies {
+        m := best_move(cur, depth, hist)
+        if m == 0 {
+            i = plies
+        } else {
+            out = vec.push(out, m)
+            hist = push_hist(hist, cur)
+            cur = moves.make(cur, m)
+            i = i + 1
+        }
+    }
+    out
+}

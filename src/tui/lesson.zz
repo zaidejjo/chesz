@@ -1,0 +1,155 @@
+// Guided lessons runner: Scholar's mate trap + back-rank theme,
+// taught move-by-move on the puzzle rails. Each ply shows its teach
+// line and accepts only the lesson SAN; a wrong move coaches without
+// consuming anything. q skips the lesson.
+
+import std.vec
+
+import chesz.engine.board
+import chesz.engine.fen
+import chesz.engine.lessons
+import chesz.engine.moves
+import chesz.engine.san
+import chesz.tui.board_view
+import chesz.tui.game
+import chesz.tui.pick
+import tui.keys as tkeys
+import tui.screen
+
+func draw_lesson(p: board.Pos, cursor: int, selected: int, targets: [int], li: int, ply: int, note: str, mode: int, style: int, theme: int, pal: [int]) {
+    rows := board_view.render(p, cursor, selected, targets, 0 - 1, 0 - 1, mode, style, theme, pal)
+    side := []
+    side = vec.push(side, "Lesson " + str(li + 1) + "/" + str(lessons.count()))
+    side = vec.push(side, lessons.desc_at(li))
+    side = vec.push(side, lessons.teach_at(li, ply))
+    if len(note) > 0 {
+        side = vec.push(side, note)
+    }
+    side = vec.push(side, "")
+    side = vec.push(side, "arrows/hjkl move · enter select")
+    side = vec.push(side, "q skip lesson")
+    _g := game.draw_frame(rows, side)
+}
+
+func queenish(legal: [int], from: int, to: int) -> int {
+    opts := board_view.find_moves(legal, from, to)
+    if len(opts) == 0 {
+        return 0
+    }
+    i := 0
+    while i < len(opts) {
+        if moves.mv_promo(opts[i]) == 5 {
+            return opts[i]
+        }
+        i = i + 1
+    }
+    opts[0]
+}
+
+func lesson_loop(start: board.Pos, li: int, mode: int, style: int, theme: int, pal: [int]) -> bool {
+    p := start
+    want := lessons.moves_at(li)
+    ply := 0
+    cursor := 12
+    selected := 0 - 1
+    targets := []
+    note := ""
+    done := false
+    won := false
+    while !done {
+        if ply >= len(want) {
+            won = true
+            done = true
+        } else {
+            draw_lesson(p, cursor, selected, targets, li, ply, note, mode, style, theme, pal)
+            k := tkeys.read()
+            if k == tkeys.eof() || k == tkeys.ctrl_c() || k == 113 || k == tkeys.esc() {
+                done = true
+            } else {
+                if k == 104 || k == 106 || k == 107 || k == 108 || k == tkeys.up() || k == tkeys.down() || k == tkeys.left() || k == tkeys.right() {
+                    dx := 0
+                    dy := 0
+                    if k == tkeys.left() || k == 104 {
+                        dx = 0 - 1
+                    }
+                    if k == tkeys.right() || k == 108 {
+                        dx = 1
+                    }
+                    if k == tkeys.up() || k == 107 {
+                        dy = 1
+                    }
+                    if k == tkeys.down() || k == 106 {
+                        dy = 0 - 1
+                    }
+                    cursor = board_view.step_cursor(cursor, dx, dy)
+                } else {
+                    if k == tkeys.enter() || k == 32 {
+                        if selected < 0 {
+                            v := p.b[cursor]
+                            if (p.side == 1 && v > 0) || (p.side == 0 - 1 && v < 0) {
+                                selected = cursor
+                                targets = board_view.targets_for(p, cursor)
+                            }
+                        } else {
+                            if board_view.has_sq(targets, cursor) {
+                                m := queenish(moves.gen_legal(p), selected, cursor)
+                                if m != 0 {
+                                    if san.notation(p, m) == want[ply] || san.parse_san(p, want[ply]) == m {
+                                        p = moves.make(p, m)
+                                        ply = ply + 1
+                                        cursor = moves.mv_to(m)
+                                        selected = 0 - 1
+                                        targets = []
+                                        note = ""
+                                    } else {
+                                        note = "Not the lesson move — try " + want[ply]
+                                        selected = 0 - 1
+                                        targets = []
+                                    }
+                                }
+                            } else {
+                                v := p.b[cursor]
+                                if (p.side == 1 && v > 0) || (p.side == 0 - 1 && v < 0) {
+                                    selected = cursor
+                                    targets = board_view.targets_for(p, cursor)
+                                } else {
+                                    selected = 0 - 1
+                                    targets = []
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    won
+}
+
+pub func run() -> bool {
+    if !screen.is_tty() {
+        return false
+    }
+    if !screen.enter() {
+        return false
+    }
+    defer screen.exit()
+    screen.hide()
+    mode := screen.mode()
+    board_view.ensure_config()
+    style := board_view.resolve_style()
+    theme := board_view.resolve_theme()
+    pal := board_view.load_custom(theme)
+    solved := 0
+    i := 0
+    while i < lessons.count() {
+        if let .some(p) = fen.parse(lessons.fen_at(i)) {
+            if lesson_loop(p, i, mode, style, theme, pal) {
+                solved = solved + 1
+            }
+        }
+        i = i + 1
+    }
+    pick.pick("Finished " + str(solved) + "/" + str(lessons.count()) + " lessons", ["OK"])
+    true
+}

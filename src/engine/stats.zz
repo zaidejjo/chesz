@@ -84,6 +84,10 @@ pub func line_for(opp: str) -> str {
 }
 
 pub func build_text(lad: int, recs: [[int]]) -> str {
+    build_text_full(lad, recs, 0, "")
+}
+
+pub func build_text_full(lad: int, recs: [[int]], streak_n: int, skind: str) -> str {
     names := opps()
     out := "{\"ladder\": " + str(lad)
     i := 0
@@ -94,10 +98,106 @@ pub func build_text(lad: int, recs: [[int]]) -> str {
         out = out + ", \"" + reckey(names[i], "d") + "\": " + str(recs[i][3])
         i = i + 1
     }
+    out = out + ", \"streak_n\": " + str(streak_n) + ", \"skind\": \"" + skind + "\""
     out + "}\n"
 }
 
-func write_all(lad: int, changed: str, rec: [int]) {
+func get_str(j: json, key: str) -> str {
+    match json.get(j, key) {
+        .ok(v) => {
+            if json.is_string(v) {
+                json.as_str(v)
+            } else {
+                ""
+            }
+        }
+        .err(_) => ""
+    }
+}
+
+// Streak core: [count, kind] where kind is "W"/"L"/"D"/"".
+
+pub func streak_in(text: str) -> [int] {
+    j := root_of(text)
+    if !json.is_object(j) {
+        return [0, 0]
+    }
+    n := get_int(j, "streak_n", 0)
+    k := get_str(j, "skind")
+    code := 0
+    if k == "W" {
+        code = 1
+    } else {
+        if k == "L" {
+            code = 2
+        } else {
+            if k == "D" {
+                code = 3
+            }
+        }
+    }
+    [n, code]
+}
+
+func streak_kind(code: int) -> str {
+    if code == 1 {
+        "W"
+    } else {
+        if code == 2 {
+            "L"
+        } else {
+            if code == 3 {
+                "D"
+            } else {
+                ""
+            }
+        }
+    }
+}
+
+// Aggregate W-L-D over every opponent.
+
+pub func totals_in(text: str) -> [int] {
+    names := opps()
+    g := 0
+    w := 0
+    l := 0
+    d := 0
+    i := 0
+    while i < len(names) {
+        r := rec_in(text, names[i])
+        g = g + r[0]
+        w = w + r[1]
+        l = l + r[2]
+        d = d + r[3]
+        i = i + 1
+    }
+    [g, w, l, d]
+}
+
+// Lobby profile card: ladder + aggregate record + streak.
+
+pub func profile_in(text: str) -> str {
+    lad := ladder_in(text)
+    t := totals_in(text)
+    line := "Ladder " + str(lad)
+    if t[0] == 0 {
+        line = line + " · no games yet"
+    } else {
+        line = line + " · " + str(t[1]) + "-" + str(t[2]) + "-" + str(t[3]) + " over " + str(t[0])
+    }
+    st := streak_in(text)
+    if st[0] >= 2 && st[1] > 0 {
+        line = line + " · streak " + streak_kind(st[1]) + str(st[0])
+    }
+    line
+}
+
+pub func profile() -> str {
+    profile_in(read_text())
+}
+
+func write_full(lad: int, changed: str, rec: [int], streak_n: int, skind: str) {
     text := read_text()
     names := opps()
     recs := []
@@ -119,10 +219,15 @@ func write_all(lad: int, changed: str, rec: [int]) {
         .ok(_) => 0
         .err(_) => 0 - 1
     }
-    match fs.write(stats_path(), build_text(lad, recs)) {
+    match fs.write(stats_path(), build_text_full(lad, recs, streak_n, skind)) {
         .ok(_) => 0
         .err(_) => 0 - 1
     }
+}
+
+func write_all(lad: int, changed: str, rec: [int]) {
+    st := streak_in(read_text())
+    write_full(lad, changed, rec, st[0], streak_kind(st[1]))
 }
 
 // score10: 10 win, 5 draw, 0 loss (tenths dodge floats).
@@ -130,16 +235,25 @@ func write_all(lad: int, changed: str, rec: [int]) {
 pub func record(opp: str, score10: int) {
     r := rec_for(opp)
     r[0] = r[0] + 1
+    kind := ""
     if score10 >= 10 {
         r[1] = r[1] + 1
+        kind = "W"
     } else {
         if score10 >= 5 {
             r[3] = r[3] + 1
+            kind = "D"
         } else {
             r[2] = r[2] + 1
+            kind = "L"
         }
     }
-    write_all(ladder(), opp, r)
+    st := streak_in(read_text())
+    nn := 1
+    if streak_kind(st[1]) == kind {
+        nn = st[0] + 1
+    }
+    write_full(ladder(), opp, r, nn, kind)
 }
 
 // Expected score in tenths for myelo vs oppelo (linear logistic

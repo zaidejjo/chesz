@@ -1,0 +1,137 @@
+// Tournament: round-robin over the personalities, alternating colors,
+// crosstable output. play_game is the headless engine-vs-engine core
+// (book first, then best_move_for); table() formats a flat n*n
+// score2 matrix (2 win / 1 draw / 0 loss from the row side, -1 self)
+// into crosstable lines. Tests use Joker self-play at 6 plies (VM-fast).
+
+import std.vec
+
+import ai
+import board
+import book
+import moves
+import person
+
+// 1 white wins, 2 black wins, 0 draw/undecided at the ply cap.
+
+pub func play_game(eng_w: person.Engine, eng_b: person.Engine, max_ply: int) -> int {
+    p := board.setup()
+    hist := []
+    ply := 0
+    while ply < max_ply {
+        st := person.result(p, hist)
+        if st == 1 {
+            return 1
+        }
+        if st == 2 {
+            return 2
+        }
+        if st != 0 {
+            return 0
+        }
+        eng := eng_w
+        if p.side == 0 - 1 {
+            eng = eng_b
+        }
+        m := book.probe(p)
+        if m == 0 {
+            m = person.best_move_for(eng, p, hist)
+        }
+        if m == 0 {
+            return 0
+        }
+        hist = ai.push_hist(hist, p)
+        p = moves.make(p, m)
+        ply = ply + 1
+    }
+    0
+}
+
+func short_name(full: str) -> str {
+    // Roster entries carry "(800)" suffixes; the table wants "Novice".
+    i := 0
+    while i < len(full) {
+        if full[i] == " " || full[i] == "(" {
+            out := ""
+            k := 0
+            while k < i {
+                out = out + full[k]
+                k = k + 1
+            }
+            return out
+        }
+        i = i + 1
+    }
+    full
+}
+
+func cell_text(v: int) -> str {
+    if v < 0 {
+        "x"
+    } else {
+        if v == 2 {
+            "1"
+        } else {
+            if v == 1 {
+                "="
+            } else {
+                "0"
+            }
+        }
+    }
+}
+
+pub func short_of(full: str) -> str {
+    short_name(full)
+}
+
+// Points (in halves, i.e. 2 per win) for one row of the matrix.
+
+pub func row_points(mat: [int], n: int, row: int) -> int {
+    tot := 0
+    c := 0
+    while c < n {
+        v := mat[row * n + c]
+        if v > 0 {
+            tot = tot + v
+        }
+        c = c + 1
+    }
+    tot
+}
+
+pub func fmt_pts2(p2: int) -> str {
+    if p2 % 2 == 1 {
+        str(p2 / 2) + ".5"
+    } else {
+        str(p2 / 2)
+    }
+}
+
+pub func table(names: [str], mat: [int], n: int) -> [str] {
+    out := []
+    head := "        "
+    i := 0
+    while i < n {
+        head = head + short_name(names[i]) + " "
+        i = i + 1
+    }
+    out = vec.push(out, head + " Pts")
+    i = 0
+    while i < n {
+        line := short_name(names[i])
+        while len(line) < 7 {
+            line = line + " "
+        }
+        line = line + " "
+        c := 0
+        while c < n {
+            line = line + cell_text(mat[i * n + c]) + "  "
+            c = c + 1
+        }
+        line = line + fmt_pts2(row_points(mat, n, i))
+        out = vec.push(out, line)
+        i = i + 1
+    }
+    out
+}

@@ -1,0 +1,125 @@
+// Suspend/resume: S saves FEN + clocks + SANs to suspend.json; the
+// lobby Resume entry rebuilds a live frame from the SAN trail.
+// Repetition history is the one lossy bit: push_hist keeps the last
+// 12 positions, so a game suspended past a repetition boundary
+// resumes with a shorter trail (noted, not hidden).
+
+import std.env
+import std.fs
+import std.json
+import std.str
+
+pub func suspend_path() -> str {
+    match env.home_dir() {
+        .some(h) => h + "/.config/chesz/suspend.json"
+        .none => "./chesz_suspend.json"
+    }
+}
+
+func esc_json(t: str) -> str {
+    s := str.replace(t, "\\", "\\\\")
+    str.replace(s, "\"", "\\\"")
+}
+
+func join_sans(sans: [str]) -> str {
+    out := ""
+    i := 0
+    while i < len(sans) {
+        if i > 0 {
+            out = out + " "
+        }
+        out = out + sans[i]
+        i = i + 1
+    }
+    out
+}
+
+pub func build_text(fen_text: str, wms: int, bms: int, inc: int, sans: [str]) -> str {
+    "{\"fen\": \"" + esc_json(fen_text) + "\", \"wms\": " + str(wms) + ", \"bms\": " + str(bms) + ", \"inc\": " + str(inc) + ", \"sans\": \"" + esc_json(join_sans(sans)) + "\"}\n"
+}
+
+func root_of(text: str) -> json {
+    if text == "" {
+        return json.null()
+    }
+    json.parse_or_null(text)
+}
+
+func get_int(j: json, key: str, fb: int) -> int {
+    match json.get(j, key) {
+        .ok(v) => json.as_int(v)
+        .err(_) => fb
+    }
+}
+
+func get_str(j: json, key: str) -> str {
+    match json.get(j, key) {
+        .ok(v) => {
+            if json.is_string(v) {
+                json.as_str(v)
+            } else {
+                ""
+            }
+        }
+        .err(_) => ""
+    }
+}
+
+pub func fen_in(text: str) -> str {
+    get_str(root_of(text), "fen")
+}
+
+pub func wms_in(text: str) -> int {
+    get_int(root_of(text), "wms", 0 - 1)
+}
+
+pub func bms_in(text: str) -> int {
+    get_int(root_of(text), "bms", 0 - 1)
+}
+
+pub func inc_in(text: str) -> int {
+    get_int(root_of(text), "inc", 0)
+}
+
+pub func sans_in(text: str) -> [str] {
+    s := get_str(root_of(text), "sans")
+    if s == "" {
+        return []
+    }
+    str.split(s, " ")
+}
+
+pub func save(fen_text: str, wms: int, bms: int, inc: int, sans: [str]) -> str {
+    path := suspend_path()
+    home := ""
+    match env.home_dir() {
+        .some(h) => home = h + "/.config/chesz"
+        .none => home = "."
+    }
+    match fs.mkdir_all(home) {
+        .ok(_) => 0
+        .err(_) => 0 - 1
+    }
+    match fs.write(path, build_text(fen_text, wms, bms, inc, sans)) {
+        .ok(_) => path
+        .err(_) => ""
+    }
+}
+
+pub func load_text() -> str {
+    match fs.read_to_string(suspend_path()) {
+        .ok(t) => t
+        .err(_) => ""
+    }
+}
+
+pub func has_save() -> bool {
+    fs.exists(suspend_path())
+}
+
+pub func clear() {
+    match fs.write(suspend_path(), "") {
+        .ok(_) => 0
+        .err(_) => 0 - 1
+    }
+}

@@ -15,11 +15,13 @@ import chesz.engine.ai
 import chesz.engine.board
 import chesz.engine.book
 import chesz.engine.eval
+import chesz.engine.fen
 import chesz.engine.moves
 import chesz.engine.person
 import chesz.engine.pgn
 import chesz.engine.san
 import chesz.engine.stats
+import chesz.engine.suspend
 import chesz.tui.board_view
 import chesz.tui.mouse
 import chesz.tui.pick
@@ -52,18 +54,22 @@ pub struct Frame {
     inc: int,
     turn_ms: int,
     evals: [int],
+    flipped: bool,
+    zen: bool,
 }
 
 func fresh_frame(human_side: int) -> Frame {
     cur := 12
+    flip := false
     if human_side == 0 - 1 {
         cur = 52
+        flip = true
     }
-    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
+    Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: cur, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: [], flipped: flip, zen: false}
 }
 
 func replay(played: [int]) -> Frame {
-    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: []}
+    st := Frame{pos: board.setup(), hist: [], sans: [], played: [], cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: 0 - 1, bms: 0 - 1, inc: 0, turn_ms: 0, evals: [], flipped: false, zen: false}
     i := 0
     while i < len(played) {
         st.sans = vec.push(st.sans, san.notation(st.pos, played[i]))
@@ -212,6 +218,9 @@ func gfx_line(style: int, src: str) -> str {
 }
 
 func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int, style: int, src: str) -> [str] {
+    if st.zen {
+        return zen_panel(st)
+    }
     out := []
     out = vec.push(out, "Chesz")
     if eng.elo == 0 {
@@ -266,6 +275,22 @@ func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int
     out = vec.push(out, "")
     out = vec.push(out, "arrows/hjkl move · enter select")
     out = vec.push(out, "? coach hint · u undo · q resign · e eval")
+    out = vec.push(out, "f flip · z zen · s suspend")
+    out
+}
+
+// Zen mode: board + clock only, every other panel hidden.
+
+func zen_panel(st: Frame) -> [str] {
+    out := []
+    cl := clock_line(st)
+    if len(cl) > 0 {
+        out = vec.push(out, cl)
+    }
+    if len(st.hint) > 0 {
+        out = vec.push(out, st.hint)
+    }
+    out = vec.push(out, "z zen off")
     out
 }
 
@@ -315,7 +340,7 @@ pub func draw_frame(rows: [str], side: [str]) -> [int] {
 }
 
 func draw(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int, style: int, src: str, theme: int) -> Frame {
-    rows := board_view.render(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode, style, theme, st.tpal)
+    rows := board_view.render_ex(st.pos, st.cursor, st.selected, st.targets, st.last_from, st.last_to, mode, style, theme, st.tpal, st.flipped)
     if st.show_bar {
         rows = board_view.with_bar(rows, st.bar_pct, mode)
     }
@@ -561,11 +586,55 @@ func with_clock(st: Frame, clock: [int]) -> Frame {
 }
 
 func start_frame(human_side: int, clock: [int]) -> Frame {
+    start_frame_odds(human_side, clock, 0, 0 - 1)
+}
+
+// Handicap start: the ENGINE side begins minus one queenside piece.
+// pc 0 plays normal chess; engine_side is the engine's color.
+
+pub func start_frame_odds(human_side: int, clock: [int], pc: int, engine_side: int) -> Frame {
     st := fresh_frame(human_side)
+    if pc == 2 || pc == 3 || pc == 4 {
+        st.pos = board.setup_odds_side(pc, engine_side)
+    }
     st = with_clock(st, clock)
     st.tpal = board_view.load_custom(board_view.resolve_theme())
     st = refresh_bar(st)
     st.evals = [st.bar_cp]
+    st.turn_ms = time.now_ms()
+    st
+}
+
+// Suspend: FEN + clocks + SAN trail to suspend.json. Returns the path
+// ("" when the disk says no).
+
+pub func save_suspend(st: Frame) -> str {
+    suspend.save(fen.generate(st.pos), st.wms, st.bms, st.inc, st.sans)
+}
+
+// Resume: rebuild a live frame from the SAN trail with saved clocks.
+// Repetition history is the lossy bit (last-12 window, see suspend.zz).
+
+pub func load_suspend() -> Frame {
+    text := suspend.load_text()
+    sans := suspend.sans_in(text)
+    p := board.setup()
+    ms := []
+    i := 0
+    while i < len(sans) {
+        m := san.parse_san(p, sans[i])
+        if m == 0 {
+            i = len(sans)
+        } else {
+            ms = vec.push(ms, m)
+            p = moves.make(p, m)
+            i = i + 1
+        }
+    }
+    st := from_moves(ms)
+    st.wms = suspend.wms_in(text)
+    st.bms = suspend.bms_in(text)
+    st.inc = suspend.inc_in(text)
     st.turn_ms = time.now_ms()
     st
 }
@@ -632,6 +701,34 @@ pub func run(eng: person.Engine, human_side: int, clock: [int]) -> bool {
     true
 }
 
+// Handicap game: like run() but the engine side starts minus one
+// queenside piece (pc 2/3/4, 0 for even). Colors/rematch as usual.
+
+pub func run_odds(eng: person.Engine, human_side: int, clock: [int], pc: int) -> bool {
+    if !screen.is_tty() {
+        return false
+    }
+    engine_side := 0 - human_side
+    flip := human_side
+    again := true
+    while again {
+        st := start_frame_odds(flip, clock, pc, engine_side)
+        code := 0
+        if flip == 1 {
+            code = finish(st, eng, flip, false, "Human", eng.name)
+        } else {
+            code = finish(st, eng, flip, false, eng.name, "Human")
+        }
+        if code == 2 {
+            flip = 0 - flip
+            engine_side = 0 - flip
+        } else {
+            again = false
+        }
+    }
+    true
+}
+
 pub func run_duo(clock: [int]) -> bool {
     if !screen.is_tty() {
         return false
@@ -659,6 +756,7 @@ pub func run_loaded(st: Frame, eng: person.Engine, human_side: int, clock: [int]
     st = with_clock(st, clock)
     st.turn_ms = time.now_ms()
     st.tpal = board_view.load_custom(board_view.resolve_theme())
+    st.flipped = human_side == 0 - 1
     code := finish(st, eng, human_side, false, white, black)
     if code != 2 {
         return true
@@ -698,7 +796,7 @@ func review_loop(st: Frame) {
             p = moves.make(p, st.played[k])
             k = k + 1
         }
-        rows := board_view.render(p, 0 - 1, 0 - 1, [], 0 - 1, 0 - 1, mode, style, theme, st.tpal)
+        rows := board_view.render_ex(p, 0 - 1, 0 - 1, [], 0 - 1, 0 - 1, mode, style, theme, st.tpal, st.flipped)
         label := "Start position"
         if idx > 0 {
             label = move_no(idx - 1) + st.sans[idx - 1]
@@ -797,7 +895,7 @@ func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, styl
         ev := mouse.read()
         if mouse.is_mouse(ev) {
             if ev[1] == 0 {
-                sq := mouse.board_sq(ev[2], ev[3], st.m_ox, st.m_oy, st.show_bar)
+                sq := mouse.board_sq_ex(ev[2], ev[3], st.m_ox, st.m_oy, st.show_bar, st.flipped)
                 if sq >= 0 {
                     st.cursor = sq
                     st = press(st, human_side)
@@ -824,7 +922,13 @@ func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, styl
                         st.targets = []
                     } else {
                         if k == 104 || k == 106 || k == 107 || k == 108 || k == tkeys.up() || k == tkeys.down() || k == tkeys.left() || k == tkeys.right() {
-                            st.cursor = board_view.step_cursor(st.cursor, key_dx(k), key_dy(k))
+                            dx := key_dx(k)
+                            dy := key_dy(k)
+                            if st.flipped {
+                                dx = 0 - dx
+                                dy = 0 - dy
+                            }
+                            st.cursor = board_view.step_cursor(st.cursor, dx, dy)
                         } else {
                             if k == tkeys.enter() || k == 32 {
                                 st = press(st, human_side)
@@ -845,6 +949,23 @@ func human_frame(st: Frame, eng: person.Engine, human_side: int, mode: int, styl
                                     } else {
                                         if k == 101 {
                                             st.show_bar = !st.show_bar
+                                        } else {
+                                            if k == 102 {
+                                                st.flipped = !st.flipped
+                                            } else {
+                                                if k == 122 {
+                                                    st.zen = !st.zen
+                                                } else {
+                                                    if k == 115 {
+                                                        path := save_suspend(st)
+                                                        if len(path) > 0 {
+                                                            st.hint = "Suspended: " + path
+                                                        } else {
+                                                            st.hint = "Suspend failed"
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -913,6 +1034,8 @@ func undo_n(st: Frame, human_side: int, n: int) -> Frame {
     st2.cursor = st.cursor
     st2.show_bar = st.show_bar
     st2.tpal = st.tpal
+    st2.flipped = st.flipped
+    st2.zen = st.zen
     // Eval history runs parallel to played (+1 seed): drop the same tail
     // so the report never reads a removed position.
     st2.evals = slice_moves(st.evals, len(st.evals) - n)
@@ -1127,6 +1250,42 @@ func show_report(st: Frame, white: str, black: str, opp: str, delta: int) {
         } else {
             println("(PGN save failed)")
         }
+        share := share_bundle(st, white, black)
+        if len(share) > 0 {
+            println("Shared: " + share)
+        }
+    }
+}
+
+// Share bundle: one markdown file with PGN + report + eval graph for
+// sending to friends. Returns the path ("" when the disk says no).
+
+pub func share_text(st: Frame, white: str, black: str) -> str {
+    res := pgn.result_of(person.result(st.pos, st.hist), flagged(st))
+    out := "# Chesz game " + white + " vs " + black + " " + res + "\n\n"
+    out = out + "```pgn\n" + pgn.build(white, black, st.sans, res) + "```\n\n"
+    lines := report(st)
+    i := 0
+    while i < len(lines) {
+        out = out + lines[i] + "\n"
+        i = i + 1
+    }
+    if len(st.evals) > 1 {
+        out = out + "\nGraph " + board_view.eval_graph(st.evals, 24) + "\n"
+    }
+    out
+}
+
+pub func share_bundle(st: Frame, white: str, black: str) -> str {
+    dir := games_home()
+    match fs.mkdir_all(dir) {
+        .ok(_) => 0
+        .err(_) => 0 - 1
+    }
+    path := dir + "/share_" + str(time.now_ms()) + ".md"
+    match fs.write(path, share_text(st, white, black)) {
+        .ok(_) => path
+        .err(_) => ""
     }
 }
 

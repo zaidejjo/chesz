@@ -5,19 +5,25 @@ import std.str
 import std.vec
 
 import chesz.engine.ai
+import chesz.engine.board
 import chesz.engine.book
 import chesz.engine.eval
+import chesz.engine.explore
 import chesz.engine.fen
+import chesz.engine.lessons
 import chesz.engine.moves
 import chesz.engine.person
 import chesz.engine.pgn
 import chesz.engine.puzzles
 import chesz.engine.san
 import chesz.engine.stats
+import chesz.engine.suspend
+import chesz.engine.tourney
 import chesz.main as app
 import chesz.tui.board_view
 import chesz.tui.browse
 import chesz.tui.game
+import chesz.tui.lobby
 import chesz.tui.mouse
 import chesz.tui.pick
 import chesz.uci.uci
@@ -586,7 +592,7 @@ func clock_format() {
 }
 
 func report_frame(evals: [int], sans: [str], played: [int], wms: int) -> game.Frame {
-    st := game.Frame{pos: board.setup(), hist: [], sans: sans, played: played, cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: wms, bms: 60000, inc: 0, turn_ms: 0, evals: evals}
+    st := game.Frame{pos: board.setup(), hist: [], sans: sans, played: played, cursor: 12, selected: 0 - 1, targets: [], last_from: 0 - 1, last_to: 0 - 1, hint: "", hlast: 0 - 1, after: 0, m_ox: 0, m_oy: 0, tpal: [], show_bar: false, bar_cp: 0, bar_pct: 50, bar_mate: 0, wms: wms, bms: 60000, inc: 0, turn_ms: 0, evals: evals, flipped: false, zen: false}
     st
 }
 
@@ -973,4 +979,138 @@ func book_grew_past_sicilian() {
         .some(p) => assert_eq(book.probe(p) != 0, true)
         .none => panic("london FEN rejected")
     }
+}
+
+@test
+func handicap_odds_remove() {
+    p := board.setup_odds(2)
+    assert_eq(p.b[57], 0)
+    assert_eq(p.b[56], 0 - 4)
+    p = board.setup_odds(3)
+    assert_eq(p.b[58], 0)
+    p = board.setup_odds(4)
+    assert_eq(p.b[56], 0)
+    assert_eq((p.cast / 8) % 2, 0)
+    // White-side odds drop White queenside + its castling bit.
+    p = board.setup_odds_side(4, 1)
+    assert_eq(p.b[0], 0)
+    assert_eq((p.cast / 2) % 2, 0)
+    // Even game is untouched.
+    p = board.setup_odds(0)
+    assert_eq(p.b[57], 0 - 2)
+    assert_eq(p.cast, 15)
+}
+
+@test
+func pv_opens_with_mate() {
+    match fen.parse("r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 0 1") {
+        .some(p) => {
+            line := ai.pv(p, 1, 4)
+            assert_eq(len(line) > 0, true)
+            assert_eq(str.ends_with(san.notation(p, line[0]), "#"), true)
+        }
+        .none => panic("mate FEN rejected")
+    }
+}
+
+@test
+func lessons_data_legal() {
+    assert_eq(lessons.count(), 2)
+    i := 0
+    while i < lessons.count() {
+        assert_eq(len(lessons.desc_at(i)) > 0, true)
+        match fen.parse(lessons.fen_at(i)) {
+            .some(p) => {
+                seq := lessons.moves_at(i)
+                assert_eq(len(seq) > 0, true)
+                k := 0
+                while k < len(seq) {
+                    m := san.parse_san(p, seq[k])
+                    assert_eq(m != 0, true)
+                    p = moves.make(p, m)
+                    k = k + 1
+                }
+            }
+            .none => panic("lesson FEN rejected")
+        }
+        i = i + 1
+    }
+}
+
+@test
+func explorer_table() {
+    toks := pgn.tokens("1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0")
+    op := explore.opening_at6(toks)
+    assert_eq(op, "Ruy Lopez")
+    assert_eq(explore.result_of_text("1. e4 e5 1-0"), "1-0")
+    lines := explore.summarize(["Ruy Lopez", "Ruy Lopez", ""], ["1-0", "0-1", "1-0"])
+    assert_eq(len(lines), 2)
+    assert_eq(str.starts_with(lines[0], "Ruy Lopez"), true)
+    assert_eq(str.contains(lines[0], "2 games"), true)
+}
+
+@test
+func tourney_joker_fast() {
+    r := tourney.play_game(person.joker(), person.joker(), 6)
+    assert_eq(r >= 0 && r <= 2, true)
+    lines := tourney.table(["Joker", "Club"], [0 - 1, 2, 0, 0 - 1], 2)
+    assert_eq(len(lines), 3)
+    assert_eq(str.contains(lines[1], "1"), true)
+    assert_eq(tourney.row_points([0 - 1, 2, 0, 0 - 1], 2, 0), 2)
+}
+
+@test
+func profile_card() {
+    assert_eq(stats.profile_in(""), "Ladder 800 · no games yet")
+    text := stats.build_text(834, [[0, 0, 0, 0], [2, 1, 1, 0], [3, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]])
+    assert_eq(str.contains(stats.profile_in(text), "Ladder 834"), true)
+    assert_eq(str.contains(stats.profile_in(text), "2-2-1 over 5"), true)
+    full := stats.build_text_full(900, [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], 3, "W")
+    assert_eq(str.contains(stats.profile_in(full), "streak W3"), true)
+}
+
+@test
+func suspend_roundtrip() {
+    text := suspend.build_text(fen.startpos(), 300000, 300000, 0, ["e4", "e5"])
+    assert_eq(suspend.fen_in(text), fen.startpos())
+    assert_eq(suspend.wms_in(text), 300000)
+    assert_eq(suspend.bms_in(text), 300000)
+    assert_eq(suspend.inc_in(text), 0)
+    back := suspend.sans_in(text)
+    assert_eq(len(back), 2)
+    assert_eq(back[0], "e4")
+    assert_eq(back[1], "e5")
+}
+
+@test
+func flip_mirror() {
+    assert_eq(board_view.flip_sq(0), 63)
+    assert_eq(board_view.flip_sq(12), 51)
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            rows := board_view.render_ex(p, 12, 0 - 1, [], 0 - 1, 0 - 1, 0, 2, 0, [], true)
+            assert_eq(len(rows), 19)
+            assert_eq(str.contains(rows[18], "h      g"), true)
+            assert_eq(str.starts_with(rows[2], "1 "), true)
+            assert_eq(mouse.board_sq_ex(36, 16, 4, 2, false, true), 51)
+        }
+        .none => panic("startpos rejected")
+    }
+}
+
+@test
+func custom_clock_math() {
+    c := lobby.clock_of(5, 3)
+    assert_eq(c[0], 300000)
+    assert_eq(c[1], 300000)
+    assert_eq(c[2], 3000)
+}
+
+@test
+func share_bundle_text() {
+    st := report_frame([0, 0, 0], ["e4", "e5"], [101, 102], 0 - 1)
+    text := game.share_text(st, "Human", "Club")
+    assert_eq(str.contains(text, "[White \"Human\"]"), true)
+    assert_eq(str.contains(text, "Chesz report"), true)
+    assert_eq(str.contains(text, "Graph"), true)
 }

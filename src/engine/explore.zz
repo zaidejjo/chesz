@@ -1,0 +1,147 @@
+// Opening explorer: mine games/*.pgn, recognize the position at ply 6
+// via book.name_of, print a games/white% table. Pure cores stay
+// testable without touching the disk; main.zz owns the directory read.
+
+import std.str
+import std.vec
+
+import board
+import book
+import moves
+import san
+
+// Replay the first `plies` tokens; "" when the line is illegal or the
+// position is unrecognized. Callers map "" to "(unknown)".
+
+pub func opening_at(toks: [str], plies: int) -> str {
+    p := board.setup()
+    i := 0
+    while i < plies && i < len(toks) {
+        m := san.parse_san(p, toks[i])
+        if m == 0 {
+            return ""
+        }
+        p = moves.make(p, m)
+        i = i + 1
+    }
+    book.name_of(p)
+}
+
+pub func opening_at6(toks: [str]) -> str {
+    opening_at(toks, 6)
+}
+
+pub func display_name(op: str) -> str {
+    if op == "" {
+        "(unknown)"
+    } else {
+        op
+    }
+}
+
+// Result token hunt: last exact 1-0 / 0-1 / 1/2-1/2 wins, else *.
+
+pub func result_of_text(text: str) -> str {
+    res := "*"
+    lines := str.split(text, "\n")
+    li := 0
+    while li < len(lines) {
+        parts := str.split(lines[li], " ")
+        pi := 0
+        while pi < len(parts) {
+            t := parts[pi]
+            if t == "1-0" || t == "0-1" || t == "1/2-1/2" {
+                res = t
+            }
+            pi = pi + 1
+        }
+        li = li + 1
+    }
+    res
+}
+
+func idx_of(names: [str], op: str) -> int {
+    i := 0
+    while i < len(names) {
+        if names[i] == op {
+            return i
+        }
+        i = i + 1
+    }
+    0 - 1
+}
+
+// Group openings with white scoring (win=2, draw=1, loss=0 per 2).
+// Returns lines "Name | N games | W% white" sorted by games desc.
+
+pub func summarize(openings: [str], results: [str]) -> [str] {
+    names := []
+    games := []
+    score2 := []
+    i := 0
+    while i < len(openings) {
+        op := display_name(openings[i])
+        k := idx_of(names, op)
+        if k < 0 {
+            names = vec.push(names, op)
+            games = vec.push(games, 1)
+            s := 0
+            if i < len(results) {
+                if results[i] == "1-0" {
+                    s = 2
+                } else {
+                    if results[i] == "1/2-1/2" {
+                        s = 1
+                    }
+                }
+            }
+            score2 = vec.push(score2, s)
+        } else {
+            games[k] = games[k] + 1
+            if i < len(results) {
+                if results[i] == "1-0" {
+                    score2[k] = score2[k] + 2
+                } else {
+                    if results[i] == "1/2-1/2" {
+                        score2[k] = score2[k] + 1
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    // Insertion sort by games desc (tiny tables).
+    n := len(names)
+    j := 1
+    while j < n {
+        key_n := names[j]
+        key_g := games[j]
+        key_s := score2[j]
+        k := j - 1
+        while k >= 0 && games[k] < key_g {
+            names[k + 1] = names[k]
+            games[k + 1] = games[k]
+            score2[k + 1] = score2[k]
+            k = k - 1
+        }
+        names[k + 1] = key_n
+        games[k + 1] = key_g
+        score2[k + 1] = key_s
+        j = j + 1
+    }
+    out := []
+    k := 0
+    while k < len(names) {
+        pct := 0
+        if games[k] > 0 {
+            pct = score2[k] * 50 / games[k]
+        }
+        unit := " games"
+        if games[k] == 1 {
+            unit = " game"
+        }
+        out = vec.push(out, names[k] + " | " + str(games[k]) + unit + " | " + str(pct) + "% white")
+        k = k + 1
+    }
+    out
+}
