@@ -77,10 +77,11 @@ ladder and plays at your level.
 | Club   | 1200 | 2     | 500 ms      |
 | Expert | 1600 | 3     | 1.5 s       |
 | Master | 2000 | 4     | 3 s         |
+| Grandmaster | 2250 | 5 | 4 s      |
 | Adaptive | you | your band | 800 ms |
 
 Expert and Master want the native binary (`zz build -o chesz src/main.zz`
-runs ~20x the VM). Your lobby ladder starts at 800 and moves K=32 per
+runs ~20x the VM); Grandmaster (depth 5) is native-only. Your lobby ladder starts at 800 and moves K=32 per
 rated game.
 
 ## Commands

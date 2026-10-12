@@ -12,6 +12,7 @@ import board
 import moves
 import rand
 import stats
+import tt
 
 pub struct Engine {
     name: str,
@@ -47,6 +48,14 @@ pub func master() -> Engine {
     Engine{name: "Master", elo: 2000, depth: 4, movems: 3000, variety: 0, blunder: 0, joker: false}
 }
 
+// Grandmaster: depth 5 with the shared table (TT + killers carry the
+// extra ply). Native-only in practice — the VM needs ~10x per ply
+// down here — same deal Master already had, one rung further.
+
+pub func grandmaster() -> Engine {
+    Engine{name: "Grandmaster", elo: 2250, depth: 5, movems: 4000, variety: 0, blunder: 0, joker: false}
+}
+
 // Adaptive: reads the lobby ladder and plays at your level — depth by
 // band, variety and blunder scaled down as you climb, so every game is
 // close without ever throwing like Joker does.
@@ -56,20 +65,26 @@ pub func adaptive() -> Engine {
     depth := 1
     variety := 150
     blunder := 80
-    if rating >= 1800 {
-        depth = 4
+    if rating >= 2000 {
+        depth = 5
         variety = 0
         blunder = 0
     } else {
-        if rating >= 1400 {
-            depth = 3
-            variety = 25
-            blunder = 8
+        if rating >= 1800 {
+            depth = 4
+            variety = 0
+            blunder = 0
         } else {
-            if rating >= 1000 {
-                depth = 2
-                variety = 60
-                blunder = 25
+            if rating >= 1400 {
+                depth = 3
+                variety = 25
+                blunder = 8
+            } else {
+                if rating >= 1000 {
+                    depth = 2
+                    variety = 60
+                    blunder = 25
+                }
             }
         }
     }
@@ -77,11 +92,11 @@ pub func adaptive() -> Engine {
 }
 
 pub func roster() -> [Engine] {
-    [joker(), novice(), club(), expert(), master(), adaptive()]
+    [joker(), novice(), club(), expert(), master(), grandmaster(), adaptive()]
 }
 
 pub func roster_names() -> [str] {
-    ["Joker (~400, chaos)", "Novice (800)", "Club (1200)", "Expert (1600)", "Master (2000)", "Adaptive (your level)"]
+    ["Joker (~400, chaos)", "Novice (800)", "Club (1200)", "Expert (1600)", "Master (2000)", "Grandmaster (2250, native)", "Adaptive (your level)"]
 }
 
 pub func by_index(i: int) -> Engine {
@@ -100,12 +115,12 @@ func uniform(ms: [int]) -> int {
 
 // Score every root move at depth d (full window, negated).
 
-func score_root(p: board.Pos, ms: [int], d: int) -> [int] {
+func score_root(p: board.Pos, ms: [int], d: int, t: tt.TT) -> [int] {
     out := []
     i := 0
     while i < len(ms) {
         q := moves.make(p, ms[i])
-        out = vec.push(out, 0 - ai.search(q, d - 1, 0 - 1000000, 1000000))
+        out = vec.push(out, 0 - ai.search(q, d - 1, 0 - 1000000, 1000000, 1, t))
         i = i + 1
     }
     out
@@ -116,7 +131,7 @@ func score_root(p: board.Pos, ms: [int], d: int) -> [int] {
 // their previous scores, so the clock bounds overshoot to one move
 // instead of one depth.
 
-func score_root_capped(p: board.Pos, ms: [int], prev: [int], d: int, deadline: int) -> [int] {
+func score_root_capped(p: board.Pos, ms: [int], prev: [int], d: int, deadline: int, t: tt.TT) -> [int] {
     out := []
     i := 0
     while i < len(ms) {
@@ -124,7 +139,7 @@ func score_root_capped(p: board.Pos, ms: [int], prev: [int], d: int, deadline: i
             out = vec.push(out, prev[i])
         } else {
             q := moves.make(p, ms[i])
-            out = vec.push(out, 0 - ai.search(q, d - 1, 0 - 1000000, 1000000))
+            out = vec.push(out, 0 - ai.search(q, d - 1, 0 - 1000000, 1000000, 1, t))
         }
         i = i + 1
     }
@@ -227,8 +242,12 @@ pub func search_root(eng: Engine, p: board.Pos, hist: [int]) -> Root {
         ms = all
     }
     ms = ai.order_moves(p, ms)
-    scores := score_root(p, ms, 1)
+    // One table for the whole iterative climb: deeper iterations reuse
+    // shallower entries (depth-preferred replacement keeps the best).
+    t := tt.new_tt()
+    scores := score_root(p, ms, 1, t)
     if eng.depth <= 1 {
+        tt.drop_tt(t)
         return Root{moves: ms, scores: scores, depth: 1}
     }
     start := time.now_ms()
@@ -245,11 +264,12 @@ pub func search_root(eng: Engine, p: board.Pos, hist: [int]) -> Root {
             if eng.movems > 0 {
                 dl = start + eng.movems
             }
-            scores = score_root_capped(p, ms, scores, d, dl)
+            scores = score_root_capped(p, ms, scores, d, dl, t)
             reached = d
             d = d + 1
         }
     }
+    tt.drop_tt(t)
     Root{moves: ms, scores: scores, depth: reached}
 }
 

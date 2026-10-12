@@ -23,6 +23,7 @@ import chesz.engine.san
 import chesz.engine.stats
 import chesz.engine.suspend
 import chesz.engine.tourney
+import chesz.engine.tt
 import chesz.main as app
 import chesz.tui.board_view
 import chesz.tui.browse
@@ -836,10 +837,12 @@ func opening_names() {
 
 @test
 func adaptive_joins_roster() {
-    assert_eq(len(person.roster()), 6)
-    assert_eq(len(person.roster_names()), 6)
-    assert_eq(person.by_index(5).name, "Adaptive")
+    assert_eq(len(person.roster()), 7)
+    assert_eq(len(person.roster_names()), 7)
+    assert_eq(person.by_index(5).name, "Grandmaster")
+    assert_eq(person.by_index(6).name, "Adaptive")
     assert_eq(person.by_index(99).name, "Club")
+    assert_eq(person.grandmaster().depth, 5)
 }
 
 @test
@@ -1294,5 +1297,124 @@ func blunder_miner() {
             assert_eq(str.ends_with(san.notation(p, m), "#"), true)
         }
         .none => panic("mate FEN rejected")
+    }
+}
+
+@test
+func search_score_pins() {
+    // Exact-value pins: the table + killers must never change scores,
+    // only speed. Startpos terms are all zero, so eval edits hold too.
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            assert_eq(ai.best_score(p, 1), 10)
+            assert_eq(ai.best_score(p, 2), 8)
+        }
+        .none => panic("startpos rejected")
+    }
+}
+
+@test
+func zobrist_stable() {
+    match fen.parse(fen.startpos()) {
+        .some(p) => {
+            assert_eq(tt.zkey(p), tt.zkey(p))
+            q := moves.make(p, san.parse_coord("e2e4", moves.gen_legal(p)))
+            assert_eq(tt.zkey(p) == tt.zkey(q), false)
+            // Side to move is identity: same board, other side differs.
+            r := q
+            r.side = 1
+            assert_eq(tt.zkey(q) == tt.zkey(r), false)
+        }
+        .none => panic("startpos rejected")
+    }
+    // Fresh table probes miss; store/retrieve round-trips a move.
+    t := tt.new_tt()
+    pr := tt.tt_probe(t, 424242, 2, 0 - 1000000, 1000000, 3)
+    assert_eq(pr[0], 0)
+    tt.tt_store(t, 424242, 777, 150, 2, 0, 3)
+    pr = tt.tt_probe(t, 424242, 2, 0 - 1000000, 1000000, 3)
+    assert_eq(pr[0], 1)
+    assert_eq(pr[1], 777)
+    assert_eq(pr[2], 150)
+    // Shallower entries do not satisfy deeper probes.
+    pr = tt.tt_probe(t, 424242, 3, 0 - 1000000, 1000000, 3)
+    assert_eq(pr[0], 0)
+    // Mate scores adjust by ply both ways.
+    tt.tt_store(t, 999, 111, 99995, 2, 0, 4)
+    pr = tt.tt_probe(t, 999, 2, 0 - 1000000, 1000000, 4)
+    assert_eq(pr[2], 99995)
+    pr = tt.tt_probe(t, 999, 2, 0 - 1000000, 1000000, 6)
+    assert_eq(pr[2], 99993)
+    tt.drop_tt(t)
+}
+
+@test
+func eval_new_terms() {
+    // Queen sortie punished, queen home untouched.
+    match fen.parse("rnbqkbnr/pppp1ppp/8/4p2Q/4P3/8/PPPP1PPP/RNB1KBNR w KQkq - 0 1") {
+        .some(qh5) => {
+            match fen.parse("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1") {
+                .some(qd1) => assert_eq(eval.evaluate(qh5) < eval.evaluate(qd1), true)
+                .none => panic("home FEN rejected")
+            }
+        }
+        .none => panic("sortie FEN rejected")
+    }
+    // Rook behind a passed pawn outscores the same rook ahead of it.
+    match fen.parse("4k3/8/8/P7/8/8/R7/4K3 w - - 0 1") {
+        .some(behind) => {
+            match fen.parse("4k3/8/R7/P7/8/8/8/4K3 w - - 0 1") {
+                .some(ahead) => assert_eq(eval.evaluate(behind) > eval.evaluate(ahead), true)
+                .none => panic("ahead FEN rejected")
+            }
+        }
+        .none => panic("behind FEN rejected")
+    }
+    // Startpos terms stay silent (existing symmetry holds).
+    match fen.parse(fen.startpos()) {
+        .some(p) => assert_eq(eval.evaluate(p), 8)
+        .none => panic("startpos rejected")
+    }
+}
+
+@test
+func opening_names_grow() {
+    match fen.parse("rnbqkb1r/1p2pppp/p2p1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 1") {
+        .some(p) => assert_eq(book.name_of(p), "Najdorf Sicilian")
+        .none => panic("najdorf FEN rejected")
+    }
+    match fen.parse("rnbqk2r/ppppppbp/5np1/8/2PP4/2N5/PP2PPPP/R1BQKBNR w KQkq - 0 1") {
+        .some(p) => assert_eq(book.name_of(p), "King's Indian Defence")
+        .none => panic("kid FEN rejected")
+    }
+    // QGD sorts as Gambit now, not French.
+    match fen.parse("rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR w KQkq - 0 1") {
+        .some(p) => assert_eq(book.name_of(p), "Queen's Gambit")
+        .none => panic("qgd FEN rejected")
+    }
+}
+
+@test
+func book_new_lines_answer() {
+    // Spot checks across the 25 new keys (first/middle/last also prove
+    // keys[] and replies[] stayed the same length).
+    check_book("rnbqkbnr/pp2pppp/3p4/2p5/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq - 0 1", "c5d4")
+    check_book("r1bqkbnr/pppp1ppp/2n5/8/3NP3/8/PPP2PPP/RNBQKB1R b KQkq - 0 1", "g8f6")
+    check_book("rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq - 0 1", "e7e6")
+    check_book("rnbqkb1r/pppppp1p/5np1/8/2PP4/2N5/PP2PPPP/R1BQKBNR b KQkq - 0 1", "f8g7")
+    check_book("rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq - 0 1", "d7d5")
+    check_book("rnbqkbnr/pp2pppp/2p5/8/3PN3/8/PPP2PPP/R1BQKBNR b KQkq - 0 1", "c8f5")
+    check_book("rnbqkbnr/ppp2ppp/4p3/3p4/3PP3/2N5/PPP2PPP/R1BQKBNR b KQkq - 0 1", "f8b4")
+    check_book("rnbqk2r/pppp1ppp/4pn2/8/1bPP4/2N5/PP2PPPP/R1BQKBNR w KQkq - 0 1", "e2e3")
+}
+
+func check_book(fen_text: str, coord: str) {
+    match fen.parse(fen_text) {
+        .some(p) => {
+            m := book.probe(p)
+            assert_eq(m != 0, true)
+            assert_eq(board.move_name(m), coord)
+        }
+        .none => panic("book FEN rejected: " + fen_text)
     }
 }

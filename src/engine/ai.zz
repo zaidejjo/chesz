@@ -9,6 +9,7 @@ import board
 import eval
 import moves
 import rand
+import tt
 
 // MVV-LVA loud-move score: most valuable victim, then cheapest
 // attacker, promotions just below winning captures. Quiet moves score
@@ -183,11 +184,33 @@ func delta_ok(p: board.Pos, mv: int, stand: int, alpha: int) -> bool {
     stand + eval.piece_val(vic) + 150 >= alpha
 }
 
-pub func search(p: board.Pos, depth: int, alpha: int, beta: int) -> int {
+pub func search(p: board.Pos, depth: int, alpha: int, beta: int, ply: int, t: tt.TT) -> int {
     // Horizon hands off to quiescence (captures resolve, checks evade)
     // instead of a blind static eval.
     if depth == 0 {
         return qsearch(p, alpha, beta, 6)
+    }
+    ao := alpha
+    tt_move := 0
+    key := 0
+    use_tt := depth >= 2
+    if use_tt {
+        key = tt.zkey(p)
+        pr := tt.tt_probe(t, key, depth, alpha, beta, ply)
+        if pr[0] == 1 {
+            return pr[2]
+        }
+        if pr[0] == 2 {
+            alpha = pr[2]
+        } else {
+            if pr[0] == 3 {
+                beta = pr[2]
+            }
+        }
+        if pr[0] != 4 && alpha >= beta {
+            return pr[2]
+        }
+        tt_move = pr[1]
     }
     all := moves.gen_legal(p)
     if len(all) == 0 {
@@ -212,7 +235,7 @@ pub func search(p: board.Pos, depth: int, alpha: int, beta: int) -> int {
     // fails high. Never in check (evasion is forced), needs depth.
     if depth >= 3 && !ic && se >= beta {
         np := moves.null_move(p)
-        ns := 0 - search(np, depth - 3, 0 - beta, 0 - beta + 1)
+        ns := 0 - search(np, depth - 3, 0 - beta, 0 - beta + 1, ply + 1, t)
         if ns >= beta {
             return ns
         }
@@ -223,19 +246,21 @@ pub func search(p: board.Pos, depth: int, alpha: int, beta: int) -> int {
     if depth == 1 && !ic && se + 120 <= alpha {
         loud_only = true
     }
-    ms := concat_moves(ordered(p, all, 1), ordered(p, all, 0))
+    ms := assemble(p, all, tt_move, t, ply, use_tt)
     a := alpha
+    bestm := 0
     i := 0
     first := true
     while i < len(ms) {
         if !loud_only || is_loud(p, ms[i]) {
             q := moves.make(p, ms[i])
+            mv_loud := is_loud(p, ms[i])
             score := 0
             if first {
-                score = 0 - search(q, depth - 1, 0 - beta, 0 - a)
+                score = 0 - search(q, depth - 1, 0 - beta, 0 - a, ply + 1, t)
                 first = false
             } else {
-                loud := is_loud(p, ms[i])
+                loud := mv_loud
                 if depth <= 3 && !ic && !loud && i >= 4 + depth * depth && se + 100 * depth <= alpha {
                     // Move-count pruning: late, quiet, and far below
                     // alpha — these never fail high.
@@ -250,26 +275,97 @@ pub func search(p: board.Pos, depth: int, alpha: int, beta: int) -> int {
                             red = 2
                         }
                     }
-                    score = 0 - search(q, depth - 1 - red, 0 - a - 1, 0 - a)
+                    score = 0 - search(q, depth - 1 - red, 0 - a - 1, 0 - a, ply + 1, t)
                     if red > 0 && score > a {
-                        score = 0 - search(q, depth - 1, 0 - a - 1, 0 - a)
+                        score = 0 - search(q, depth - 1, 0 - a - 1, 0 - a, ply + 1, t)
                     }
                     if score > a && score < beta {
-                        score = 0 - search(q, depth - 1, 0 - beta, 0 - a)
+                        score = 0 - search(q, depth - 1, 0 - beta, 0 - a, ply + 1, t)
                     }
                 }
             }
             // Negate bounds through the recursion (negamax).
             if score >= beta {
+                if use_tt {
+                    if !mv_loud {
+                        tt.killer_store(t, ply, ms[i])
+                    }
+                    tt.tt_store(t, key, ms[i], score, depth, 1, ply)
+                }
                 return score
             }
             if score > a {
                 a = score
+                bestm = ms[i]
             }
         }
         i = i + 1
     }
+    if use_tt {
+        flag := 2
+        if !loud_only {
+            if a <= ao {
+                flag = 2
+            } else {
+                if a >= beta {
+                    flag = 1
+                } else {
+                    flag = 0
+                }
+            }
+        }
+        tt.tt_store(t, key, bestm, a, depth, flag, ply)
+    }
     a
+}
+
+func contains_move(v: [int], x: int) -> bool {
+    i := 0
+    while i < len(v) {
+        if v[i] == x {
+            return true
+        }
+        i = i + 1
+    }
+    false
+}
+
+// TT move first, then loud, then killers, then the quiet rest.
+// Stale killers (no longer legal) and duplicates drop out.
+
+func assemble(p: board.Pos, all: [int], tt_move: int, t: tt.TT, ply: int, use_tt: bool) -> [int] {
+    loud := ordered(p, all, 1)
+    quiet := ordered(p, all, 0)
+    out := []
+    if use_tt && tt_move != 0 && contains_move(all, tt_move) {
+        out = vec.push(out, tt_move)
+    }
+    i := 0
+    while i < len(loud) {
+        if loud[i] != tt_move {
+            out = vec.push(out, loud[i])
+        }
+        i = i + 1
+    }
+    kk := [0, 0]
+    if use_tt {
+        kk = tt.killers_for(t, ply)
+        k := 0
+        while k < 2 {
+            if kk[k] != 0 && kk[k] != tt_move && contains_move(quiet, kk[k]) {
+                out = vec.push(out, kk[k])
+            }
+            k = k + 1
+        }
+    }
+    i = 0
+    while i < len(quiet) {
+        if quiet[i] != tt_move && quiet[i] != kk[0] && quiet[i] != kk[1] {
+            out = vec.push(out, quiet[i])
+        }
+        i = i + 1
+    }
+    out
 }
 
 pub func order_moves(p: board.Pos, ms: [int]) -> [int] {
@@ -295,6 +391,9 @@ pub func best_move(p: board.Pos, depth: int, hist: [int]) -> int {
     if len(all) == 0 {
         return 0
     }
+    // One table per root call: subtrees share hits through it, and it
+    // dies with the call (cells dropped, pool never grows).
+    t := tt.new_tt()
     ms := concat_moves(ordered(p, all, 1), ordered(p, all, 0))
     best := 0
     best_score := 0 - 1000000
@@ -303,7 +402,7 @@ pub func best_move(p: board.Pos, depth: int, hist: [int]) -> int {
     while i < len(ms) {
         q := moves.make(p, ms[i])
         if !seen_before(hist, q.side, q.b) {
-            score := 0 - search(q, depth - 1, 0 - 1000000, 1000000)
+            score := 0 - search(q, depth - 1, 0 - 1000000, 1000000, 1, t)
             if best == 0 || score > best_score {
                 best_score = score
                 best = ms[i]
@@ -327,6 +426,7 @@ pub func best_move(p: board.Pos, depth: int, hist: [int]) -> int {
             best = tied[k]
         }
     }
+    tt.drop_tt(t)
     best
 }
 
@@ -438,17 +538,19 @@ pub func best_score(p: board.Pos, depth: int) -> int {
     if len(all) == 0 {
         return 0
     }
+    t := tt.new_tt()
     ms := concat_moves(ordered(p, all, 1), ordered(p, all, 0))
     best := 0 - 1000000
     i := 0
     while i < len(ms) {
         q := moves.make(p, ms[i])
-        score := 0 - search(q, depth - 1, 0 - 1000000, 1000000)
+        score := 0 - search(q, depth - 1, 0 - 1000000, 1000000, 1, t)
         if score > best {
             best = score
         }
         i = i + 1
     }
+    tt.drop_tt(t)
     best
 }
 

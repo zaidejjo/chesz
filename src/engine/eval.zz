@@ -252,11 +252,106 @@ pub func evaluate(p: board.Pos) -> int {
     s = s + knight_outposts(p)
     s = s + rook_seventh(p)
     s = s + king_danger(p, phase)
+    s = s + queen_early(p)
+    s = s + rook_passed(p, wf, wr, bf, br)
     if p.side == 1 {
         s + 8
     } else {
         0 - s + 8
     }
+}
+
+// Early queen sorties (own-relative rank 3+ before move 10) hang
+// material in real games: -12 to the offender. Zero at startpos
+// (queens home) and silent in endgames (nothing early that late).
+
+func queen_early(p: board.Pos) -> int {
+    if p.full > 10 {
+        return 0
+    }
+    s := 0
+    i := 0
+    while i < 64 {
+        v := p.b[i]
+        if v == 5 {
+            if board.rank_of(i) >= 3 {
+                s = s - 12
+            }
+        } else {
+            if v == 0 - 5 {
+                if 7 - board.rank_of(i) >= 3 {
+                    s = s + 12
+                }
+            }
+        }
+        i = i + 1
+    }
+    s
+}
+
+// Rook behind its own passed pawn (+8): the classic rook lift that
+// actually wins endgames. Passed = no enemy pawn ahead on the file
+// or its neighbors. Zero at startpos (enemy pawns block everything).
+
+func rook_passed(p: board.Pos, wf: [int], wr: [int], bf: [int], br: [int]) -> int {
+    s := 0
+    i := 0
+    while i < 64 {
+        v := p.b[i]
+        if v == 4 {
+            f := board.file_of(i)
+            r := board.rank_of(i)
+            if own_ahead(wf, wr, f, r, 1) && !foe_ahead(bf, br, f, r, 1) {
+                s = s + 8
+            }
+        } else {
+            if v == 0 - 4 {
+                f := board.file_of(i)
+                r := board.rank_of(i)
+                if own_ahead(bf, br, f, r, 0 - 1) && !foe_ahead(wf, wr, f, r, 0 - 1) {
+                    s = s - 8
+                }
+            }
+        }
+        i = i + 1
+    }
+    s
+}
+
+func own_ahead(pf: [int], pr: [int], f: int, r: int, dir: int) -> bool {
+    i := 0
+    while i < len(pf) {
+        if pf[i] == f {
+            if dir == 1 && pr[i] > r {
+                return true
+            }
+            if dir == 0 - 1 && pr[i] < r {
+                return true
+            }
+        }
+        i = i + 1
+    }
+    false
+}
+
+func foe_ahead(pf: [int], pr: [int], f: int, r: int, dir: int) -> bool {
+    i := 0
+    while i < len(pf) {
+        df := pf[i] - f
+        if df < 0 {
+            df = 0 - df
+        }
+        if df <= 1 {
+            if dir == 1 && pr[i] > r {
+                return true
+            }
+            if dir == 0 - 1 && pr[i] < r {
+                return true
+            }
+        }
+        i = i + 1
+    }
+    false
 }
 
 func kings(p: board.Pos, phase: int) -> int {

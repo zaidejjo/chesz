@@ -49,7 +49,11 @@ func elo_preset(n: int) -> person.Engine {
                 if n < 1800 {
                     person.expert()
                 } else {
-                    person.master()
+                    if n < 2100 {
+                        person.master()
+                    } else {
+                        person.grandmaster()
+                    }
                 }
             }
         }
@@ -76,7 +80,7 @@ pub func run() {
             if cmd == "uci" {
                 println("id name Chesz")
                 println("id author Zaid Ajo")
-                println("option name Skill Level type spin default 2 min 0 max 4")
+                println("option name Skill Level type spin default 2 min 0 max 6")
                 println("option name Elo type spin default 1200 min 400 max 2000")
                 println("uciok")
             } else {

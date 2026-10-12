@@ -1,0 +1,207 @@
+// Transposition table + killer moves. ZZ params are values (the
+// checker even warns when you mutate one), so plain threaded tables
+// cannot accumulate across nodes. Cells are Arc-backed shared slots:
+// cheap handles to pass, mutate in place. Table = 256 per-slot cells
+// ([key, move, score, depth, flag]); killers = one 128-int cell
+// (2 per ply, 64 plies). Probes/stores assemble only at depth >= 2 —
+// leaves and quiescence pay nothing. Mate scores adjust by ply
+// (100000-base, 90000 threshold, matching ai).
+
+import std.cell
+import std.vec
+
+import board
+
+pub struct TT {
+    slots: [cell],
+    kill: cell,
+}
+
+pub func tt_size() -> int {
+    256
+}
+
+func zero128() -> [int] {
+    out := [0]
+    i := 1
+    while i < 128 {
+        out = vec.push(out, 0)
+        i = i + 1
+    }
+    out
+}
+
+pub func new_tt() -> TT {
+    slots := []
+    i := 0
+    while i < 256 {
+        slots = vec.push(slots, cell.new([0 - 1, 0, 0, 0, 0]))
+        i = i + 1
+    }
+    TT{slots: slots, kill: cell.new(zero128())}
+}
+
+pub func drop_tt(t: TT) {
+    i := 0
+    while i < len(t.slots) {
+        _d := cell.drop(t.slots[i])
+        _d = _d
+        i = i + 1
+    }
+    _k := cell.drop(t.kill)
+    _k = _k
+}
+
+// Deterministic per-piece-square hash (no table to build): injective
+// pre-mix, prime modulus after. Keys stay in [0, 2^31).
+
+func zpiece(pc: int, sq: int) -> int {
+    v := (pc + 7) * 1009 + (sq + 1) * 101
+    (v * 1103515245 + 12345) % 2147483647 + 1
+}
+
+func zmix(h: int, x: int) -> int {
+    (h + x * 65) % 2147483647
+}
+
+// Full position key: pieces + side + castling + ep + halfmove clock
+// (fifty-move draws differ, so the clock is part of identity).
+
+pub func zkey(p: board.Pos) -> int {
+    h := 0
+    i := 0
+    while i < 64 {
+        v := p.b[i]
+        if v != 0 {
+            h = zmix(h, zpiece(v + 7, i))
+        }
+        i = i + 1
+    }
+    h = zmix(h, p.side + 2)
+    h = zmix(h, p.cast + 1)
+    h = zmix(h, p.ep + 2)
+    h = zmix(h, p.half + 1)
+    h
+}
+
+func slot_get(t: TT, idx: int) -> [int] {
+    match cell.get(t.slots[idx]) {
+        .ok(v) => v
+        .err(_) => [0 - 1, 0, 0, 0, 0]
+    }
+}
+
+func slot_set(t: TT, idx: int, v: [int]) {
+    _s := match cell.set(t.slots[idx], v) {
+        .ok(_) => 0
+        .err(_) => 0 - 1
+    }
+    _s = _s
+}
+
+func adj_in(sc: int, ply: int) -> int {
+    if sc > 90000 {
+        sc - ply
+    } else {
+        if sc < 0 - 90000 {
+            sc + ply
+        } else {
+            sc
+        }
+    }
+}
+
+func adj_out(sc: int, ply: int) -> int {
+    if sc > 90000 {
+        sc + ply
+    } else {
+        if sc < 0 - 90000 {
+            sc - ply
+        } else {
+            sc
+        }
+    }
+}
+
+// Probe kinds: 0 miss, 1 exact/cutoff (use score), 2 lower (raise
+// alpha), 3 upper (lower beta), 4 move-only (ordering hint).
+
+pub func tt_probe(t: TT, key: int, depth: int, alpha: int, beta: int, ply: int) -> [int] {
+    s := slot_get(t, key % 256)
+    if s[0] != key || s[3] < depth {
+        return [0, 0, 0]
+    }
+    sc := adj_in(s[2], ply)
+    flag := s[4]
+    if flag == 0 {
+        return [1, s[1], sc]
+    }
+    if flag == 1 {
+        if sc >= beta {
+            return [1, s[1], sc]
+        }
+        if sc > alpha {
+            return [2, s[1], sc]
+        }
+        return [4, s[1], sc]
+    }
+    if sc <= alpha {
+        return [1, s[1], sc]
+    }
+    if sc < beta {
+        return [3, s[1], sc]
+    }
+    [4, s[1], sc]
+}
+
+// Depth-preferred: deeper entries survive collisions.
+
+pub func tt_store(t: TT, key: int, mv: int, score: int, depth: int, flag: int, ply: int) {
+    idx := key % 256
+    s := slot_get(t, idx)
+    if s[0] != 0 - 1 && s[3] > depth {
+        return
+    }
+    slot_set(t, idx, [key, mv, adj_out(score, ply), depth, flag])
+}
+
+func kill_get(t: TT) -> [int] {
+    match cell.get(t.kill) {
+        .ok(v) => v
+        .err(_) => zero128()
+    }
+}
+
+func kill_set(t: TT, v: [int]) {
+    _s := match cell.set(t.kill, v) {
+        .ok(_) => 0
+        .err(_) => 0 - 1
+    }
+    _s = _s
+}
+
+// Killer pair for a ply ([0, 0] past the horizon).
+
+pub func killers_for(t: TT, ply: int) -> [int] {
+    if ply < 0 || ply >= 64 {
+        return [0, 0]
+    }
+    k := kill_get(t)
+    [k[ply * 2], k[ply * 2 + 1]]
+}
+
+// Quiet cutoff? Promote to killer (LVU shift). Captures already
+// order by MVV-LVA, so only quiets are stored (caller gates).
+
+pub func killer_store(t: TT, ply: int, mv: int) {
+    if ply < 0 || ply >= 64 {
+        return
+    }
+    k := kill_get(t)
+    if k[ply * 2] == mv {
+        return
+    }
+    k[ply * 2 + 1] = k[ply * 2]
+    k[ply * 2] = mv
+    kill_set(t, k)
+}

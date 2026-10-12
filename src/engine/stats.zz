@@ -12,7 +12,7 @@ import std.str
 import std.vec
 
 pub func opps() -> [str] {
-    ["Joker", "Novice", "Club", "Expert", "Master", "Adaptive"]
+    ["Joker", "Novice", "Club", "Expert", "Master", "Grandmaster", "Adaptive"]
 }
 
 func stats_path() -> str {
