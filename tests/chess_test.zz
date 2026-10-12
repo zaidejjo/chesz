@@ -1143,6 +1143,26 @@ func netproto_lines() {
 }
 
 @test
+func net_diplomacy_lines() {
+    // Takeback ask/yes carry the rewind target; both sides converge.
+    assert_eq(netproto.kind_of(netproto.takeback_ask(8)), "takeback?")
+    assert_eq(netproto.takeback_len(netproto.takeback_ask(8)), 8)
+    assert_eq(netproto.kind_of(netproto.takeback_yes(8)), "takeback-yes")
+    assert_eq(netproto.takeback_len(netproto.takeback_yes(8)), 8)
+    assert_eq(netproto.kind_of(netproto.takeback_no()), "takeback-no")
+    assert_eq(netproto.takeback_len(netproto.takeback_no()), 0 - 1)
+    assert_eq(netproto.kind_of(netproto.draw_ask()), "draw?")
+    assert_eq(netproto.kind_of(netproto.draw_yes()), "draw-yes")
+    assert_eq(netproto.kind_of(netproto.draw_no()), "draw-no")
+    // Read-error triage: timeouts keep waiting, closures end the game.
+    assert_eq(netproto.read_gone(""), false)
+    assert_eq(netproto.read_gone("connection closed"), true)
+    assert_eq(netproto.read_gone("tcp_readline failed: Resource temporarily unavailable (os error 11)"), false)
+    assert_eq(netproto.read_gone("tcp_readline failed: Connection timed out (os error 110)"), false)
+    assert_eq(netproto.read_gone("tcp_readline failed: Connection reset by peer (os error 104)"), true)
+}
+
+@test
 func net_loopback_handshake() {
     // Single-threaded: the kernel completes the handshake on connect,
     // so write-then-accept-then-read works with no peer task.

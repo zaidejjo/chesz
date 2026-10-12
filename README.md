@@ -30,7 +30,7 @@ Launch `chesz` and the lobby offers everything:
 | Board theme    | 15 built-ins + your own files            |
 | Tournament     | Round-robin vs all personalities + crosstable |
 | Resume game    | Continue the suspended game (S mid-game) |
-| Play online    | Host/join LAN games over TCP, clock-synced |
+| Play online    | Host/join LAN games over TCP, clock-synced (takebacks + draw offers) |
 
 | Watch          | Engine vs engine, any pairing           |
 

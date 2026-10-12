@@ -8,6 +8,7 @@ import std.env
 import std.fs
 import std.net
 import std.str
+import std.term
 import std.time
 import std.vec
 
@@ -128,7 +129,8 @@ func panel(st: game.Frame, white: str, black: str, me: int, extra: str, mode: in
     }
     out = vec.push(out, "")
     out = vec.push(out, "arrows/hjkl move · enter select")
-    out = vec.push(out, "? hint · q resign · e eval · f flip · z zen · b blind")
+    out = vec.push(out, "? hint · q resign · u takeback · d draw")
+    out = vec.push(out, "e eval · f flip · z zen · b blind")
     out
 }
 
@@ -220,74 +222,397 @@ func hint_for(st: game.Frame) -> str {
 }
 
 // My turn: cursor loop until a move lands. cursor -1000 + after 3
-// means I resigned (quit-to-menu is resign over the wire).
+// means I resigned (quit-to-menu is resign over the wire). The socket
+// is polled every iteration (30ms reads) so peer takeback/draw asks
+// and resigns land mid-thought. Returns (frame, pending) — pending
+// bit0 takeback asked, bit1 draw offered, bit2 stop-and-recheck.
 
-func my_turn(st: game.Frame, white: str, black: str, me: int, mode: int, style: int, src: str, theme: int) -> game.Frame {
+func my_step(st: game.Frame, s: tcp.stream, white: str, black: str, me: int, mode: int, style: int, src: str, theme: int, pend: int) -> (game.Frame, int) {
+    set_timeout(s, 30)
     st.hint = ""
     done := false
     while !done {
-        st = draw(st, white, black, me, "", mode, style, src, theme)
-        ev := mouse.read()
-        if mouse.is_mouse(ev) {
-            if ev[1] == 0 {
-                sq := mouse.board_sq_ex(ev[2], ev[3], st.m_ox, st.m_oy, st.show_bar, st.flipped)
-                if sq >= 0 {
-                    st.cursor = sq
-                    st = press(st, me)
-                    if st.selected == 0 - 2 {
-                        st.selected = 0 - 1
-                        done = true
+        st = draw(st, white, black, me, pend_extra(pend), mode, style, src, theme)
+        if has_key() {
+            ev := mouse.read()
+            if mouse.is_mouse(ev) {
+                if ev[1] == 0 {
+                    sq := mouse.board_sq_ex(ev[2], ev[3], st.m_ox, st.m_oy, st.show_bar, st.flipped)
+                    if sq >= 0 {
+                        st.cursor = sq
+                        st = press(st, me)
+                        if st.selected == 0 - 2 {
+                            st.selected = 0 - 1
+                            done = true
+                        }
+                    }
+                }
+            } else {
+                k := ev[0]
+                if k == tkeys.eof() || k == tkeys.ctrl_c() {
+                    st.cursor = 0 - 1000
+                    st.after = 3
+                    done = true
+                } else {
+                    if k == 113 {
+                        if pick.pick("Resign?", ["Resign", "Keep playing"]) == 0 {
+                            st.cursor = 0 - 1000
+                            st.after = 3
+                            done = true
+                        }
+                    } else {
+                        if k == tkeys.esc() {
+                            st.selected = 0 - 1
+                            st.targets = []
+                        } else {
+                            if k == 104 || k == 106 || k == 107 || k == 108 || k == tkeys.up() || k == tkeys.down() || k == tkeys.left() || k == tkeys.right() {
+                                dx := 0
+                                dy := 0
+                                if k == tkeys.left() || k == 104 {
+                                    dx = 0 - 1
+                                }
+                                if k == tkeys.right() || k == 108 {
+                                    dx = 1
+                                }
+                                if k == tkeys.up() || k == 107 {
+                                    dy = 1
+                                }
+                                if k == tkeys.down() || k == 106 {
+                                    dy = 0 - 1
+                                }
+                                if st.flipped {
+                                    dx = 0 - dx
+                                    dy = 0 - dy
+                                }
+                                st.cursor = board_view.step_cursor(st.cursor, dx, dy)
+                            } else {
+                                if k == tkeys.enter() || k == 32 {
+                                    st = press(st, me)
+                                    if st.selected == 0 - 2 {
+                                        st.selected = 0 - 1
+                                        done = true
+                                    }
+                                } else {
+                                    if k == 63 {
+                                        st.hint = hint_for(st)
+                                    } else {
+                                        if k == 101 {
+                                            st.show_bar = !st.show_bar
+                                        } else {
+                                            if k == 102 {
+                                                st.flipped = !st.flipped
+                                            } else {
+                                                if k == 122 {
+                                                    st.zen = !st.zen
+                                                } else {
+                                                    if k == 98 {
+                                                        st.blind = !st.blind
+                                                    } else {
+                                                        if k == 117 {
+                                                            (qa, qb) := ask_takeback(s, st, me, pend)
+                                                            st = qa
+                                                            pend = qb
+                                                        } else {
+                                                            if k == 100 {
+                                                                (qa, qb) := offer_draw(s, st, pend)
+                                                                st = qa
+                                                                pend = qb
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
+        }
+        (line, err) := read_sock(s)
+        if err == "" {
+            (a, b) := on_peer_line(st, s, line, me, pend, false)
+            st = a
+            pend = b
+            if pend_stop(pend) {
+                pend = pend - 4
+                done = true
+            }
         } else {
-            k := ev[0]
-            if k == tkeys.eof() || k == tkeys.ctrl_c() {
-                st.cursor = 0 - 1000
-                st.after = 3
+            if netproto.read_gone(err) {
+                st.after = 5
+                done = true
+            }
+        }
+    }
+    (st, pend)
+}
+
+func send_line(s: tcp.stream, line: str) -> bool {
+    match s.write(line) {
+        .ok(_) => true
+        .err(_) => false
+    }
+}
+
+func recv_line(s: tcp.stream) -> str {
+    match s.read_line() {
+        .ok(line) => line
+        .err(_) => ""
+    }
+}
+
+// Pending diplomacy bits: 1 takeback asked, 2 draw offered, 4 stop.
+
+func pend_tb(p: int) -> bool {
+    p % 2 == 1
+}
+
+func pend_dr(p: int) -> bool {
+    (p / 2) % 2 == 1
+}
+
+func pend_stop(p: int) -> bool {
+    (p / 4) % 2 == 1
+}
+
+func clear_tb(p: int) -> int {
+    p - p % 2
+}
+
+func clear_dr(p: int) -> int {
+    if (p / 2) % 2 == 1 {
+        p - 2
+    } else {
+        p
+    }
+}
+
+func pend_extra(p: int) -> str {
+    if pend_tb(p) {
+        "takeback offered…"
+    } else {
+        if pend_dr(p) {
+            "draw offered…"
+        } else {
+            ""
+        }
+    }
+}
+
+func set_timeout(s: tcp.stream, ms: int) {
+    match s.set_read_timeout(ms) {
+        .ok(_) => 0
+        .err(_) => 0 - 1
+    }
+}
+
+// (line, err): err "" means a full line arrived.
+
+func read_sock(s: tcp.stream) -> (str, str) {
+    match s.read_line() {
+        .ok(line) => (line, "")
+        .err(e) => ("", e)
+    }
+}
+
+func has_key() -> bool {
+    match term.poll(25) {
+        .ok(v) => v
+        .err(_) => false
+    }
+}
+
+// Rewind to a target ply count (time stays — takebacks refund moves,
+// never clocks). Both sides apply the same target, so crossed asks
+// still converge. Repetition history past the last-12 window is the
+// same lossy bit as suspend/resume.
+
+func rewind_to(st: game.Frame, target: int) -> game.Frame {
+    if target < 0 || target >= len(st.played) {
+        return st
+    }
+    keep := []
+    i := 0
+    while i < target {
+        keep = vec.push(keep, st.played[i])
+        i = i + 1
+    }
+    st2 := game.from_moves(keep)
+    st2.show_bar = st.show_bar
+    st2.tpal = st.tpal
+    st2.flipped = st.flipped
+    st2.zen = st.zen
+    st2.blind = st.blind
+    st2.wms = st.wms
+    st2.bms = st.bms
+    st2.inc = st.inc
+    st2.turn_ms = time.now_ms()
+    if target > 0 {
+        st2.cursor = st2.last_to
+    } else {
+        st2.cursor = st.cursor
+    }
+    st2
+}
+
+// One peer line, both turns share it. allow_move is true only while
+// waiting (a move on my turn is a protocol violation — ignored).
+// Returns (frame, pending); pending bit2 set means stop and recheck.
+
+func on_peer_line(st: game.Frame, s: tcp.stream, line: str, me: int, pend: int, allow_move: bool) -> (game.Frame, int) {
+    kind := netproto.kind_of(line)
+    if kind == "move" {
+        if !allow_move {
+            return (st, pend)
+        }
+        m := san.parse_coord(netproto.move_coord(line), moves.gen_legal(st.pos))
+        if m == 0 {
+            st.after = 5
+            return (st, pend + 4)
+        }
+        st = game.do_move(st, m)
+        st.wms = netproto.move_wms(line)
+        st.bms = netproto.move_bms(line)
+        st.turn_ms = time.now_ms()
+        st.cursor = st.last_to
+        return (st, pend + 4)
+    }
+    if kind == "resign" {
+        st.after = 4
+        return (st, pend + 4)
+    }
+    if kind == "takeback?" {
+        t := netproto.takeback_len(line)
+        if t < 0 || t >= len(st.played) {
+            send_line(s, netproto.takeback_no())
+            return (st, pend)
+        }
+        if pick.pick("Opponent asks takeback", ["Accept", "Decline"]) == 0 {
+            send_line(s, netproto.takeback_yes(t))
+            st = rewind_to(st, t)
+            st.hint = "takeback accepted"
+            pend = clear_tb(pend)
+            return (st, pend + 4)
+        }
+        send_line(s, netproto.takeback_no())
+        return (st, pend)
+    }
+    if kind == "takeback-yes" {
+        t := netproto.takeback_len(line)
+        pend = clear_tb(pend)
+        if t >= 0 && t < len(st.played) {
+            st = rewind_to(st, t)
+            st.hint = "takeback accepted"
+        }
+        return (st, pend + 4)
+    }
+    if kind == "takeback-no" {
+        st.hint = "takeback declined"
+        return (st, clear_tb(pend))
+    }
+    if kind == "draw?" {
+        if pick.pick("Opponent offers draw", ["Accept", "Decline"]) == 0 {
+            send_line(s, netproto.draw_yes())
+            st.after = 6
+            return (st, pend + 4)
+        }
+        send_line(s, netproto.draw_no())
+        return (st, pend)
+    }
+    if kind == "draw-yes" {
+        st.after = 6
+        return (st, clear_dr(pend) + 4)
+    }
+    if kind == "draw-no" {
+        st.hint = "draw declined"
+        return (st, clear_dr(pend))
+    }
+    (st, pend)
+}
+
+func ask_takeback(s: tcp.stream, st: game.Frame, me: int, pend: int) -> (game.Frame, int) {
+    if pend_tb(pend) {
+        st.hint = "takeback already asked"
+        return (st, pend)
+    }
+    if len(st.played) == 0 {
+        st.hint = "nothing to take back"
+        return (st, pend)
+    }
+    t := len(st.played) - 1
+    if st.pos.side == me {
+        t = len(st.played) - 2
+    }
+    if t < 0 {
+        t = 0
+    }
+    send_line(s, netproto.takeback_ask(t))
+    st.hint = "takeback offered…"
+    (st, pend + 1)
+}
+
+func offer_draw(s: tcp.stream, st: game.Frame, pend: int) -> (game.Frame, int) {
+    if pend_dr(pend) {
+        st.hint = "draw already offered"
+        return (st, pend)
+    }
+    send_line(s, netproto.draw_ask())
+    st.hint = "draw offered…"
+    (st, pend + 2)
+}
+
+// Opponent turn: 200ms socket reads; timeouts service local keys, so
+// resign/takeback/draw/display all work mid-wait. Only a dead
+// connection (read_gone) ends the game.
+
+func wait_step(st: game.Frame, s: tcp.stream, white: str, black: str, me: int, mode: int, style: int, src: str, theme: int, pend: int) -> (game.Frame, int) {
+    set_timeout(s, 200)
+    done := false
+    while !done {
+        extra := pend_extra(pend)
+        if extra == "" {
+            extra = "waiting for opponent…"
+        } else {
+            extra = extra + " · waiting…"
+        }
+        st = draw(st, white, black, me, extra, mode, style, src, theme)
+        (line, err) := read_sock(s)
+        if err == "" {
+            (a, b) := on_peer_line(st, s, line, me, pend, true)
+            st = a
+            pend = b
+            if pend_stop(pend) {
+                pend = pend - 4
+                done = true
+            }
+        } else {
+            if netproto.read_gone(err) {
+                st.after = 5
                 done = true
             } else {
-                if k == 113 {
-                    if pick.pick("Resign?", ["Resign", "Keep playing"]) == 0 {
-                        st.cursor = 0 - 1000
-                        st.after = 3
-                        done = true
-                    }
-                } else {
-                    if k == tkeys.esc() {
-                        st.selected = 0 - 1
-                        st.targets = []
-                    } else {
-                        if k == 104 || k == 106 || k == 107 || k == 108 || k == tkeys.up() || k == tkeys.down() || k == tkeys.left() || k == tkeys.right() {
-                            dx := 0
-                            dy := 0
-                            if k == tkeys.left() || k == 104 {
-                                dx = 0 - 1
+                if has_key() {
+                    ev := mouse.read()
+                    if !mouse.is_mouse(ev) {
+                        k := ev[0]
+                        if k == 113 {
+                            if pick.pick("Resign?", ["Resign", "Keep playing"]) == 0 {
+                                st.after = 3
+                                pend = pend + 4
+                                done = true
                             }
-                            if k == tkeys.right() || k == 108 {
-                                dx = 1
-                            }
-                            if k == tkeys.up() || k == 107 {
-                                dy = 1
-                            }
-                            if k == tkeys.down() || k == 106 {
-                                dy = 0 - 1
-                            }
-                            if st.flipped {
-                                dx = 0 - dx
-                                dy = 0 - dy
-                            }
-                            st.cursor = board_view.step_cursor(st.cursor, dx, dy)
                         } else {
-                            if k == tkeys.enter() || k == 32 {
-                                st = press(st, me)
-                                if st.selected == 0 - 2 {
-                                    st.selected = 0 - 1
-                                    done = true
-                                }
+                            if k == 100 {
+                                (qa, qb) := offer_draw(s, st, pend)
+                                st = qa
+                                pend = qb
                             } else {
-                                if k == 63 {
-                                    st.hint = hint_for(st)
+                                if k == 117 {
+                                    (qa, qb) := ask_takeback(s, st, me, pend)
+                                    st = qa
+                                    pend = qb
                                 } else {
                                     if k == 101 {
                                         st.show_bar = !st.show_bar
@@ -312,93 +637,66 @@ func my_turn(st: game.Frame, white: str, black: str, me: int, mode: int, style: 
             }
         }
     }
-    st
-}
-
-func send_line(s: tcp.stream, line: str) -> bool {
-    match s.write(line) {
-        .ok(_) => true
-        .err(_) => false
-    }
-}
-
-func recv_line(s: tcp.stream) -> str {
-    match s.read_line() {
-        .ok(line) => line
-        .err(_) => ""
-    }
-}
-
-// Opponent turn: blocking read. Adopt their clocks (exact sync),
-// stamp the turn. "" / illegal move / resign map to end codes.
-
-func opp_turn(st: game.Frame, s: tcp.stream, white: str, black: str, me: int, mode: int, style: int, src: str, theme: int) -> game.Frame {
-    st = draw(st, white, black, me, "waiting for opponent…", mode, style, src, theme)
-    line := recv_line(s)
-    if line == "" {
-        st.after = 5
-        return st
-    }
-    if netproto.kind_of(line) == "resign" {
-        st.after = 4
-        return st
-    }
-    if netproto.kind_of(line) != "move" {
-        st.after = 5
-        return st
-    }
-    m := san.parse_coord(netproto.move_coord(line), moves.gen_legal(st.pos))
-    if m == 0 {
-        st.after = 5
-        return st
-    }
-    st = game.do_move(st, m)
-    st.wms = netproto.move_wms(line)
-    st.bms = netproto.move_bms(line)
-    st.turn_ms = time.now_ms()
-    st.cursor = st.last_to
-    st
+    (st, pend)
 }
 
 func net_loop(st: game.Frame, s: tcp.stream, white: str, black: str, me: int, mode: int, style: int, src: str, theme: int) -> game.Frame {
+    pend := 0
     quit := false
     while !quit {
         fl := game.flagged(st)
         res := person.result(st.pos, st.hist)
-        if fl != 0 || res != 0 {
+        if fl != 0 || res != 0 || st.after == 6 {
             line := ""
-            if fl == 1 {
-                line = "0-1 Black wins on time"
+            if st.after == 6 {
+                line = "1/2-1/2 draw agreed"
             } else {
-                if fl == 2 {
-                    line = "1-0 White wins on time"
+                if fl == 1 {
+                    line = "0-1 Black wins on time"
                 } else {
-                    line = person.result_line(res)
+                    if fl == 2 {
+                        line = "1-0 White wins on time"
+                    } else {
+                        line = person.result_line(res)
+                    }
                 }
             }
             st = draw(st, white, black, me, line, mode, style, src, theme)
-            pick.pick(line, ["Done"])
+            _d := pick.pick(line, ["Done"])
+            _d = _d
             quit = true
         } else {
-            if st.pos.side == me {
-                before := len(st.played)
-                st = my_turn(st, white, black, me, mode, style, src, theme)
-                if st.after == 3 {
-                    send_line(s, "resign\n")
-                    quit = true
-                } else {
-                    if len(st.played) > before {
-                        m := st.played[len(st.played) - 1]
-                        if !send_line(s, netproto.move_build(board.move_name(m), st.wms, st.bms)) {
-                            st.after = 5
-                            quit = true
+            if st.after != 0 {
+                st = draw(st, white, black, me, end_line(st), mode, style, src, theme)
+                _d := pick.pick(end_line(st), ["Done"])
+                _d = _d
+                quit = true
+            } else {
+                if st.pos.side == me {
+                    before := len(st.played)
+                    (a, b) := my_step(st, s, white, black, me, mode, style, src, theme, pend)
+                    st = a
+                    pend = b
+                    if st.after == 3 {
+                        send_line(s, "resign\n")
+                        quit = true
+                    } else {
+                        if st.after == 0 && len(st.played) > before {
+                            m := st.played[len(st.played) - 1]
+                            if !send_line(s, netproto.move_build(board.move_name(m), st.wms, st.bms)) {
+                                st.after = 5
+                                quit = true
+                            }
                         }
                     }
-                }
-            } else {
-                st = opp_turn(st, s, white, black, me, mode, style, src, theme)
-                if st.after == 4 || st.after == 5 {
-                    quit = true
+                } else {
+                    (a, b) := wait_step(st, s, white, black, me, mode, style, src, theme, pend)
+                    st = a
+                    pend = b
+                    if st.after == 3 {
+                        send_line(s, "resign\n")
+                        quit = true
+                    }
                 }
             }
         }
@@ -416,9 +714,21 @@ func end_line(st: game.Frame) -> str {
             if st.after == 5 {
                 "opponent disconnected"
             } else {
-                game.result_str(st)
+                if st.after == 6 {
+                    "1/2-1/2 draw agreed"
+                } else {
+                    game.result_str(st)
+                }
             }
         }
+    }
+}
+
+func pgn_res(st: game.Frame) -> str {
+    if st.after == 6 {
+        "1/2-1/2"
+    } else {
+        pgn.result_of(person.result(st.pos, st.hist), game.flagged(st))
     }
 }
 
@@ -444,7 +754,7 @@ func finish_net(st: game.Frame, white: str, black: str) {
             .ok(_) => 0
             .err(_) => 0 - 1
         }
-        res := pgn.result_of(person.result(st.pos, st.hist), game.flagged(st))
+        res := pgn_res(st)
         path := dir + "/net_" + str(time.now_ms()) + ".pgn"
         match fs.write(path, pgn.build(white, black, st.sans, res)) {
             .ok(_) => println("Saved PGN: " + path)

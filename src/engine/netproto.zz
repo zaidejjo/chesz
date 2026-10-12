@@ -115,6 +115,71 @@ pub func move_bms(line: str) -> int {
     }
 }
 
+// Takeback: ask carries the TARGET length (rewind-to), so both sides
+// converge even when asks cross or answers arrive late — rewind-to-L
+// is idempotent and order-free (L >= len is a no-op).
+
+pub func takeback_ask(target: int) -> str {
+    "takeback? " + str(target) + "\n"
+}
+
+pub func takeback_yes(target: int) -> str {
+    "takeback-yes " + str(target) + "\n"
+}
+
+pub func takeback_no() -> str {
+    "takeback-no\n"
+}
+
+pub func takeback_len(line: str) -> int {
+    parts := str.split(str.trim(line), " ")
+    if len(parts) >= 2 {
+        opt_int(parts[1], 0 - 1)
+    } else {
+        0 - 1
+    }
+}
+
+pub func draw_ask() -> str {
+    "draw?\n"
+}
+
+pub func draw_yes() -> str {
+    "draw-yes\n"
+}
+
+pub func draw_no() -> str {
+    "draw-no\n"
+}
+
+// Read-error triage: "connection closed" (and resets/breaks) mean the
+// peer is gone; timeouts ("temporarily unavailable", "timed out")
+// mean keep waiting. True = dead, keep polling on false.
+
+pub func read_gone(err: str) -> bool {
+    if err == "" {
+        false
+    } else {
+        if err == "connection closed" {
+            true
+        } else {
+            if str.contains(err, "temporarily unavailable") {
+                false
+            } else {
+                if str.contains(err, "timed out") || str.contains(err, "TimedOut") {
+                    false
+                } else {
+                    if str.contains(err, "reset") || str.contains(err, "broken pipe") {
+                        true
+                    } else {
+                        true
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub func split_addr(text: str) -> [str] {
     [addr_host(text), str(addr_port(text))]
 }
