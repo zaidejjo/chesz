@@ -310,7 +310,7 @@ func pick_engine() -> person.Engine {
 func menu() {
     again := true
     while again {
-        c := ask.select("ZZ Chess", ["Play vs engine (board UI)", "Play vs engine (text)", "Watch engine vs engine", "Self-test", "Quit"])
+        c := ask.select("Chesz", ["Play vs engine (board UI)", "Play vs engine (text)", "Watch engine vs engine", "Self-test", "Quit"])
         if c == "Play vs engine (board UI)" {
             side := ask.select("Play as", ["White", "Black"])
             human := 1

@@ -99,6 +99,48 @@ func glyph_for(v: int, mode: int) -> str {
 // chip — constant islands that read on every square shade and every
 // theme, instead of ink mixed into the square itself.
 
+func piece_mid(v: int, g: str, mode: int) -> str {
+    // 3-wide island, no trailing reset — the square wash closes it.
+    esc := "\e["
+    if mode >= 3 {
+        if v > 0 {
+            esc + "1m" + esc + "48;2;55;35;20m" + esc + "38;2;255;255;255m " + g + " "
+        } else {
+            if v < 0 {
+                esc + "1m" + esc + "48;2;235;225;205m" + esc + "38;2;30;20;15m " + g + " "
+            } else {
+                "   "
+            }
+        }
+    } else {
+        if mode == 2 {
+            if v > 0 {
+                esc + "1m" + esc + "48;5;94m" + esc + "38;5;231m " + g + " "
+            } else {
+                if v < 0 {
+                    esc + "1m" + esc + "48;5;230m" + esc + "38;5;232m " + g + " "
+                } else {
+                    "   "
+                }
+            }
+        } else {
+            if mode == 1 {
+                if v > 0 {
+                    esc + "97m " + g + " "
+                } else {
+                    if v < 0 {
+                        esc + "33m " + g + " "
+                    } else {
+                        "   "
+                    }
+                }
+            } else {
+                " " + g + " "
+            }
+        }
+    }
+}
+
 func piece_fg(v: int, text: str, mode: int) -> str {
     if mode == 0 {
         return text
@@ -131,7 +173,6 @@ func piece_fg(v: int, text: str, mode: int) -> str {
         }
     }
 }
-
 func rank_label(r: int, mode: int) -> str {
     t := str(r + 1) + " "
     if mode == 0 {
@@ -265,7 +306,7 @@ func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], 
     while f < 8 {
         sq := r * 8 + f
         v := p.b[sq]
-        art := "       "
+        cell := "       "
         if true {
             if mode == 0 || style == 2 {
                 if piece_line {
@@ -273,23 +314,26 @@ func cell_row(p: board.Pos, r: int, cursor: int, selected: int, targets: [int], 
                     if v != 0 {
                         g = board.glyph(v)
                     }
-                    art = "   " + g + "   "
+                    if mode == 0 {
+                        cell = "   " + g + "   "
+                    } else {
+                        cell = "  " + piece_mid(v, g, mode) + "  "
+                    }
                 }
             } else {
                 if style == 1 {
                     if piece_line {
-                        art = "   " + glyph_for(v, mode) + "   "
+                        cell = "  " + piece_mid(v, glyph_for(v, mode), mode) + "  "
                     }
                 } else {
                     sub := 0
                     if piece_line {
                         sub = 1
                     }
-                    art = ascii_art(v, sub)
+                    cell = piece_fg(v, ascii_art(v, sub), mode)
                 }
             }
         }
-        cell := piece_fg(v, art, mode)
         line = line + mark_bg(sq, cell, cursor, selected, targets, last_from, last_to, check_king, mode, theme, pal)
         f = f + 1
     }

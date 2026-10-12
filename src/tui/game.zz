@@ -82,15 +82,36 @@ func replay(played: [int]) -> Frame {
 // Rebuild a live frame from bare move ints (PGN load): full SAN,
 // history, eval cache and bar, ready to continue playing.
 
+// Rebuild a live frame from bare move ints (PGN load): full SAN,
+// history and eval cache, ready to continue playing. Deliberately
+// quiet and static — no check toasts, no searches per ply — so even
+// long games replay instantly; one deep refresh lands on the final
+// position for the bar display.
+
 pub func from_moves(ms: [int]) -> Frame {
     st := fresh_frame(1)
-    st = refresh_bar(st)
+    st.bar_cp = eval.white_cp(st.pos)
+    st.bar_pct = eval.win_pct(st.bar_cp)
+    st.bar_mate = 0
     st.evals = [st.bar_cp]
     i := 0
     while i < len(ms) {
-        st = do_move(st, ms[i])
+        st.sans = vec.push(st.sans, san.notation(st.pos, ms[i]))
+        st.hist = ai.push_hist(st.hist, st.pos)
+        st.pos = moves.make(st.pos, ms[i])
+        st.last_from = moves.mv_from(ms[i])
+        st.last_to = moves.mv_to(ms[i])
+        st.played = vec.push(st.played, ms[i])
+        st.cursor = st.last_to
+        st.selected = 0 - 1
+        st.targets = []
+        st.hint = ""
+        st.bar_cp = eval.white_cp(st.pos)
+        st.bar_pct = eval.win_pct(st.bar_cp)
+        st.evals = vec.push(st.evals, st.bar_cp)
         i = i + 1
     }
+    st = refresh_bar(st)
     st
 }
 
@@ -192,7 +213,7 @@ func gfx_line(style: int, src: str) -> str {
 
 func panel(st: Frame, eng: person.Engine, human_side: int, extra: str, mode: int, style: int, src: str) -> [str] {
     out := []
-    out = vec.push(out, "ZZ Chess 0.2.0")
+    out = vec.push(out, "Chesz")
     if eng.elo == 0 {
         out = vec.push(out, eng.name)
     } else {

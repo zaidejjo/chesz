@@ -62,24 +62,28 @@ func home_fallback() -> str {
 // OS read; dotfiles hidden).
 
 func collect_names(dir: str, all: [str]) -> [str] {
-    names := []
+    dirs := []
+    files := []
     i := 0
     while i < len(all) {
         n := all[i]
-        if !str.starts_with(n, ".") && fs.is_dir(join_path(dir, n)) {
-            names = vec.push(names, n)
+        if !str.starts_with(n, ".") {
+            if fs.is_dir(join_path(dir, n)) {
+                dirs = vec.push(dirs, n)
+            } else {
+                if is_pgn_name(n) {
+                    files = vec.push(files, n)
+                }
+            }
         }
         i = i + 1
     }
     i = 0
-    while i < len(all) {
-        n := all[i]
-        if !str.starts_with(n, ".") && !fs.is_dir(join_path(dir, n)) && is_pgn_name(n) {
-            names = vec.push(names, n)
-        }
+    while i < len(files) {
+        dirs = vec.push(dirs, files[i])
         i = i + 1
     }
-    names
+    dirs
 }
 
 func list_names(dir: str) -> [str] {
@@ -169,9 +173,9 @@ pub func browse(start: str) -> str {
     sel := 0
     query := ""
     picked := ""
+    names := list_names(dir)
     live := true
     while live {
-        names := list_names(dir)
         shown := []
         i := 0
         while i < len(names) {
@@ -242,6 +246,7 @@ pub func browse(start: str) -> str {
                                         dir = parent_of(dir)
                                         sel = 0
                                         query = ""
+                                        names = list_names(dir)
                                         _saved := board_view.set_last_dir(dir)
                                         sel = sel
                                     }
@@ -250,6 +255,7 @@ pub func browse(start: str) -> str {
                                         dir = parent_of(dir)
                                         sel = 0
                                         query = ""
+                                        names = list_names(dir)
                                         _saved := board_view.set_last_dir(dir)
                                         sel = sel
                                     } else {
@@ -271,6 +277,7 @@ pub func browse(start: str) -> str {
                 dir = full
                 sel = 0
                 query = ""
+                names = list_names(dir)
                 _saved := board_view.set_last_dir(dir)
                 sel = sel
             } else {

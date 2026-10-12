@@ -17,7 +17,7 @@ import tui.screen
 
 func watch_panel(st: game.Frame, eng_w: person.Engine, eng_b: person.Engine, mode: int, style: int, src: str) -> [str] {
     out := []
-    out = vec.push(out, "ZZ Chess 0.2.0 — watch")
+    out = vec.push(out, "Chesz — watch")
     if style == 1 {
         out = vec.push(out, "Pieces: glyphs [" + src + "]")
     } else {

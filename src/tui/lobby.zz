@@ -4,6 +4,7 @@
 // return indices; game/watch own the alternate screen themselves.
 
 import std.fs
+import std.str
 import std.term
 import std.vec
 
@@ -139,6 +140,11 @@ func load_pgn_flow() {
                 pick.pick("No moves in file", ["OK"])
                 return
             }
+            parts := str.split(path, "/")
+            name := parts[len(parts) - 1]
+            if pick.pick(name + ": " + str(len(ms)) + " moves", ["Play", "Cancel"]) != 0 {
+                return
+            }
             st := game.from_moves(ms)
             side := color_palette()
             if side == 0 {
@@ -231,7 +237,7 @@ pub func run() -> bool {
     while again {
         raw_on()
         mouse.enable()
-        c := pick.pick("ZZ Chess", ["Play vs engine", "Two humans (hotseat)", "Load PGN game", "Puzzles", "Board theme", "Watch engine vs engine", "Quit"])
+        c := pick.pick("Chesz", ["Play vs engine", "Two humans (hotseat)", "Load PGN game", "Puzzles", "Board theme", "Watch engine vs engine", "Quit"])
         if c == 0 {
             side := color_palette()
             if side != 0 {

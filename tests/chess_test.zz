@@ -914,9 +914,10 @@ func piece_chips() {
     match fen.parse(fen.startpos()) {
         .some(p) => {
             rows := board_view.render(p, 0 - 1, 0 - 1, [], 0 - 1, 0 - 1, 3, 2, 0, [])
-            assert_eq(str.contains(rows[13], "38;2;255;255;255"), true)
-            assert_eq(str.contains(rows[13], "48;2;55;35;20"), true)
-            assert_eq(str.contains(rows[3], "48;2;235;225;205"), true)
+            assert_eq(str.contains(rows[14], "38;2;255;255;255"), true)
+            assert_eq(str.contains(rows[14], "48;2;55;35;20"), true)
+            assert_eq(str.contains(rows[14], "48;2;240;217;181"), true)
+            assert_eq(str.contains(rows[4], "48;2;235;225;205"), true)
         }
         .none => panic("startpos rejected")
     }
@@ -940,7 +941,7 @@ func pick_fuzzy() {
 
 @test
 func pick_view_aligned() {
-    rows := pick.view("ZZ Chess", ["Play vs engine", "Quit"], 0, "")
+    rows := pick.view("Chesz", ["Play vs engine", "Quit"], 0, "")
     assert_eq(len(rows), 9)
     i := 2
     while i < 8 {
